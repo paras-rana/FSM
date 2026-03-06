@@ -1,0 +1,24 @@
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: "Poppins", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(1200px 780px at 90% -20%, rgba(150, 170, 161, 0.3), transparent 64%),
+    radial-gradient(1000px 700px at -10% 120%, rgba(68, 102, 108, 0.45), transparent 60%),
+    radial-gradient(700px 420px at 18% 20%, rgba(190, 121, 74, 0.18), transparent 62%),
+    linear-gradient(140deg, #35595e 0%, #2e5056 52%, #27464b 100%);
+  color: #2b241f;
+}
+
+#root {
+  min-height: 100vh;
+}

@@ -1,0 +1,34 @@
+import axios from "axios";
+
+const baseURL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000/api";
+
+export const api = axios.create({
+  baseURL
+});
+
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem("fsm_token");
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const status = error?.response?.status as number | undefined;
+    const requestUrl = (error?.config?.url as string | undefined) ?? "";
+    const isLoginRequest = requestUrl.includes("/auth/login");
+
+    if (status === 401 && !isLoginRequest) {
+      localStorage.removeItem("fsm_token");
+      localStorage.removeItem("fsm_user");
+      if (window.location.pathname !== "/login") {
+        window.location.assign("/login");
+      }
+    }
+
+    return Promise.reject(error);
+  }
+);
