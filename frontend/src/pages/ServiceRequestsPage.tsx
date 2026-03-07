@@ -72,8 +72,8 @@ export const ServiceRequestsPage = () => {
                 <tr className="text-left border-b">
                   <th className="py-2 pr-4">SR #</th>
                   <th className="py-2 pr-4">Requestor</th>
-                  <th className="py-2 pr-4">Building</th>
-                  <th className="py-2 pr-4">Area</th>
+                  <th className="py-2 pr-4">Facility</th>
+                  <th className="py-2 pr-4">Zone</th>
                   <th className="py-2 pr-4">Urgency</th>
                   <th className="py-2 pr-4">Contact</th>
                   <th className="py-2 pr-4">Description</th>

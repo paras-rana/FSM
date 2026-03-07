@@ -126,7 +126,7 @@ serviceRequestsRouter.get("/:id", async (req, res, next) => {
 serviceRequestsRouter.post("/:id/convert-to-wo", authorize("MANAGER", "ADMIN"), async (req, res, next) => {
   try {
     const sr = await pool.query(
-      `SELECT id, sr_number, description, status, requestor_name FROM service_requests WHERE id = $1`,
+      `SELECT id, sr_number, description, status, requestor_name, building, area FROM service_requests WHERE id = $1`,
       [req.params.id]
     );
     if (sr.rowCount === 0) {
@@ -142,10 +142,10 @@ serviceRequestsRouter.post("/:id/convert-to-wo", authorize("MANAGER", "ADMIN"), 
     const title = `SR-${sr.rows[0].sr_number}: ${sr.rows[0].requestor_name}`;
 
     const createdWo = await pool.query(
-      `INSERT INTO work_orders (id, title, description, status, service_request_id)
-       VALUES ($1, $2, $3, 'CREATED', $4)
-       RETURNING id, wo_number, title, description, status, service_request_id, created_at, updated_at`,
-      [workOrderId, title, sr.rows[0].description, req.params.id]
+      `INSERT INTO work_orders (id, title, description, status, service_request_id, facility_name, zone_name)
+       VALUES ($1, $2, $3, 'CREATED', $4, $5, $6)
+       RETURNING id, wo_number, title, description, status, service_request_id, facility_name, zone_name, created_at, updated_at`,
+      [workOrderId, title, sr.rows[0].description, req.params.id, sr.rows[0].building, sr.rows[0].area]
     );
 
     await pool.query(

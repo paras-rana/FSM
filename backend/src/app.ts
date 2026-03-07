@@ -7,6 +7,7 @@ import { authenticate } from "./middleware/authenticate";
 import { errorHandler, notFoundHandler } from "./middleware/error-handler";
 import { authRouter } from "./routes/auth.routes";
 import { costsRouter } from "./routes/costs.routes";
+import { facilitiesRouter, publicFacilitiesRouter } from "./routes/facilities.routes";
 import { laborEntriesRouter } from "./routes/labor-entries.routes";
 import { notificationsRouter } from "./routes/notifications.routes";
 import { reportsRouter } from "./routes/reports.routes";
@@ -41,10 +42,12 @@ app.get("/health", (_req, res) => {
 
 app.use("/api/auth", authRouter);
 app.use("/api/service-requests", publicServiceRequestsRouter);
+app.use("/api/facilities", publicFacilitiesRouter);
 
 app.use("/api", authenticate);
 
 app.use("/api/users", usersRouter);
+app.use("/api/facilities", facilitiesRouter);
 app.use("/api/work-orders", workOrdersRouter);
 app.use("/api/labor-entries", laborEntriesRouter);
 app.use("/api/reports", reportsRouter);

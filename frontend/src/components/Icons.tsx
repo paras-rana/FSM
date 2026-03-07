@@ -60,6 +60,33 @@ export const CostIcon = (props: IconProps) => (
   </svg>
 );
 
+export const ReportsIcon = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M4 20V8" />
+    <path d="M10 20V4" />
+    <path d="M16 20v-7" />
+    <path d="M22 20v-11" />
+  </svg>
+);
+
+export const ThemeIcon = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M12 3a9 9 0 100 18h1a3 3 0 003-3 2 2 0 012-2h1a3 3 0 003-3A10 10 0 0012 3z" />
+    <circle cx="7.5" cy="10" r="1" />
+    <circle cx="10.5" cy="7.5" r="1" />
+    <circle cx="14.5" cy="7.5" r="1" />
+    <circle cx="16.5" cy="11" r="1" />
+  </svg>
+);
+
+export const FacilityIcon = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M3 21h18" />
+    <path d="M5 21V8l7-4 7 4v13" />
+    <path d="M9 11h2M13 11h2M9 15h2M13 15h2" />
+  </svg>
+);
+
 export const AttachmentIcon = (props: IconProps) => (
   <svg {...base(props)}>
     <path d="M8 12.5l6.5-6.5a3.5 3.5 0 115 5L10 21a5 5 0 11-7-7l10-10" />

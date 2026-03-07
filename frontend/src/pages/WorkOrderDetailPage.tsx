@@ -4,11 +4,27 @@ import { AppShell } from "../components/AppShell";
 import { api } from "../modules/api/client";
 import { useAuth } from "../modules/auth/AuthContext";
 import { hasAnyRole } from "../modules/auth/roles";
-import type { AttachmentItem, CostTotals, LaborEntry, WorkOrder } from "../types";
+import type {
+  AttachmentItem,
+  CostTotals,
+  LaborEntry,
+  MaterialItem,
+  VendorInvoiceItem,
+  WorkOrder
+} from "../types";
 
 const currency = (value: number): string =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(value || 0));
 const today = new Date().toISOString().slice(0, 10);
+const dateTime = (value?: string): string => (value ? new Date(value).toLocaleString() : "-");
+const escapeHtml = (value: string): string =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
 type TechnicianOption = {
   id: string;
   full_name: string;
@@ -21,6 +37,8 @@ export const WorkOrderDetailPage = () => {
   const [workOrder, setWorkOrder] = useState<WorkOrder | null>(null);
   const [totals, setTotals] = useState<CostTotals | null>(null);
   const [labor, setLabor] = useState<LaborEntry[]>([]);
+  const [materials, setMaterials] = useState<MaterialItem[]>([]);
+  const [vendorInvoices, setVendorInvoices] = useState<VendorInvoiceItem[]>([]);
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
   const [technicians, setTechnicians] = useState<TechnicianOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -66,6 +84,25 @@ export const WorkOrderDetailPage = () => {
     () => labor.reduce((sum, entry) => sum + Number(entry.hours || 0), 0),
     [labor]
   );
+  const technicianNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const technician of technicians) {
+      map.set(technician.id, technician.full_name);
+    }
+    return map;
+  }, [technicians]);
+  const resolveTechnicianLabel = (technicianId?: string | null, technicianName?: string | null) => {
+    if (technicianName) return technicianName;
+    if (technicianId && technicianNameById.has(technicianId)) return technicianNameById.get(technicianId)!;
+    return "Unknown Technician";
+  };
+  const serviceRequestLabel = workOrder?.service_request_number
+    ? `SR-${workOrder.service_request_number}`
+    : "-";
+  const leadTechnicianLabel = resolveTechnicianLabel(
+    workOrder?.lead_technician_id,
+    workOrder?.lead_technician_name
+  );
   const toggleSection = (section: "costs" | "labor" | "attachments") => {
     setSectionsOpen((prev) => ({ ...prev, [section]: !prev[section] }));
   };
@@ -74,9 +111,11 @@ export const WorkOrderDetailPage = () => {
     if (showLoading) setLoading(true);
     setError(null);
     try {
-      const [woRes, totalsRes, laborRes, uploadsRes] = await Promise.all([
+      const [woRes, totalsRes, materialsRes, vendorInvoicesRes, laborRes, uploadsRes] = await Promise.all([
         api.get<WorkOrder>(`/work-orders/${workOrderId}`),
         api.get<CostTotals>(`/costs/totals?workOrderId=${workOrderId}`),
+        api.get<MaterialItem[]>(`/costs/materials?workOrderId=${workOrderId}`),
+        api.get<VendorInvoiceItem[]>(`/costs/vendor-invoices?workOrderId=${workOrderId}`),
         api.get<LaborEntry[]>(`/labor-entries?workOrderId=${workOrderId}&limit=200`),
         api.get<AttachmentItem[]>(
           `/uploads?entityType=WORK_ORDER&entityId=${workOrderId}&limit=200`
@@ -84,6 +123,8 @@ export const WorkOrderDetailPage = () => {
       ]);
       setWorkOrder(woRes.data);
       setTotals(totalsRes.data);
+      setMaterials(materialsRes.data);
+      setVendorInvoices(vendorInvoicesRes.data);
       setLabor(laborRes.data);
       setAttachments(uploadsRes.data);
     } catch {
@@ -91,6 +132,183 @@ export const WorkOrderDetailPage = () => {
     } finally {
       if (showLoading) setLoading(false);
     }
+  };
+
+  const generatePdfReport = () => {
+    if (!workOrder || !totals) return;
+    setError(null);
+
+    const reportGeneratedAt = new Date().toLocaleString();
+    const materialRows = materials
+      .map(
+        (item) => `
+          <tr>
+            <td>${escapeHtml(item.description)}</td>
+            <td>${Number(item.quantity).toFixed(3)}</td>
+            <td>${currency(Number(item.unit_cost))}</td>
+            <td>${(Number(item.sales_tax_rate) * 100).toFixed(2)}%</td>
+            <td>${currency(Number(item.subtotal))}</td>
+            <td>${currency(Number(item.tax))}</td>
+            <td>${currency(Number(item.total))}</td>
+            <td>${dateTime(item.created_at)}</td>
+          </tr>`
+      )
+      .join("");
+    const vendorRows = vendorInvoices
+      .map(
+        (item) => `
+          <tr>
+            <td>${escapeHtml(item.vendor_name)}</td>
+            <td>${escapeHtml(item.invoice_number)}</td>
+            <td>${currency(Number(item.amount))}</td>
+            <td>${(Number(item.sales_tax_rate) * 100).toFixed(2)}%</td>
+            <td>${currency(Number(item.subtotal))}</td>
+            <td>${currency(Number(item.tax))}</td>
+            <td>${currency(Number(item.total))}</td>
+            <td>${dateTime(item.created_at)}</td>
+          </tr>`
+      )
+      .join("");
+    const laborRows = labor
+      .map(
+        (entry) => `
+          <tr>
+            <td>${escapeHtml(entry.entry_date)}</td>
+            <td>${Number(entry.hours).toFixed(2)}</td>
+            <td>${escapeHtml(entry.entry_type)}</td>
+            <td>${escapeHtml(resolveTechnicianLabel(entry.technician_id, entry.technician_name))}</td>
+            <td>${dateTime(entry.created_at)}</td>
+          </tr>`
+      )
+      .join("");
+
+    const reportHtml = `<!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8" />
+        <title>Work Order ${escapeHtml(String(workOrder.wo_number))} Report</title>
+        <style>
+          body { font-family: Arial, sans-serif; color: #111827; margin: 24px; }
+          h1, h2 { margin: 0 0 10px; }
+          h2 { margin-top: 28px; }
+          .meta { margin-bottom: 14px; line-height: 1.5; }
+          .summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
+          .card { border: 1px solid #d1d5db; border-radius: 8px; padding: 10px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+          th, td { border: 1px solid #d1d5db; padding: 7px; font-size: 12px; text-align: left; vertical-align: top; }
+          th { background: #f3f4f6; }
+          .small { color: #4b5563; font-size: 12px; }
+          @media print {
+            body { margin: 12mm; }
+            h2 { page-break-after: avoid; }
+            table, tr, td, th { page-break-inside: avoid; }
+          }
+        </style>
+      </head>
+      <body>
+        <h1>Work Order Report</h1>
+        <p class="small">Generated: ${escapeHtml(reportGeneratedAt)}</p>
+        <div class="meta">
+          <div><strong>WO Number:</strong> ${escapeHtml(String(workOrder.wo_number))}</div>
+          <div><strong>Title:</strong> ${escapeHtml(workOrder.title)}</div>
+          <div><strong>Status:</strong> ${escapeHtml(workOrder.status)}</div>
+          <div><strong>Facility:</strong> ${escapeHtml(workOrder.facility_name)}</div>
+          <div><strong>Zone / Room:</strong> ${escapeHtml(workOrder.zone_name ?? "-")}</div>
+          <div><strong>Lead Technician:</strong> ${escapeHtml(leadTechnicianLabel)}</div>
+          <div><strong>Service Request:</strong> ${escapeHtml(serviceRequestLabel)}</div>
+          <div><strong>Created:</strong> ${escapeHtml(dateTime(workOrder.created_at))}</div>
+          <div><strong>Updated:</strong> ${escapeHtml(dateTime(workOrder.updated_at))}</div>
+        </div>
+
+        <h2>Description</h2>
+        <p>${escapeHtml(workOrder.description || "-")}</p>
+
+        <h2>Totals</h2>
+        <div class="summary">
+          <div class="card"><strong>Material Total</strong><br/>${escapeHtml(currency(totals.material.total))}</div>
+          <div class="card"><strong>Vendor Total</strong><br/>${escapeHtml(currency(totals.vendor.total))}</div>
+          <div class="card"><strong>Combined Total</strong><br/>${escapeHtml(currency(totals.combined.total))}</div>
+        </div>
+        <div class="summary">
+          <div class="card"><strong>Labor Hours</strong><br/>${laborTotalHours.toFixed(2)} hrs</div>
+          <div class="card"><strong>Combined Subtotal</strong><br/>${escapeHtml(currency(totals.combined.subtotal))}</div>
+          <div class="card"><strong>Combined Tax</strong><br/>${escapeHtml(currency(totals.combined.tax))}</div>
+        </div>
+
+        <h2>Material Line Items</h2>
+        ${
+          materials.length === 0
+            ? "<p class='small'>No material entries.</p>"
+            : `<table>
+            <thead>
+              <tr>
+                <th>Description</th><th>Qty</th><th>Unit Cost</th><th>Tax Rate</th><th>Subtotal</th><th>Tax</th><th>Total</th><th>Created</th>
+              </tr>
+            </thead>
+            <tbody>${materialRows}</tbody>
+          </table>`
+        }
+
+        <h2>Vendor Invoice Line Items</h2>
+        ${
+          vendorInvoices.length === 0
+            ? "<p class='small'>No vendor invoice entries.</p>"
+            : `<table>
+            <thead>
+              <tr>
+                <th>Vendor</th><th>Invoice #</th><th>Amount</th><th>Tax Rate</th><th>Subtotal</th><th>Tax</th><th>Total</th><th>Created</th>
+              </tr>
+            </thead>
+            <tbody>${vendorRows}</tbody>
+          </table>`
+        }
+
+        <h2>Labor Entries</h2>
+        ${
+          labor.length === 0
+            ? "<p class='small'>No labor entries.</p>"
+            : `<table>
+            <thead>
+              <tr>
+                <th>Date</th><th>Hours</th><th>Type</th><th>Technician</th><th>Created</th>
+              </tr>
+            </thead>
+            <tbody>${laborRows}</tbody>
+          </table>`
+        }
+      </body>
+      </html>`;
+
+    const printFrame = document.createElement("iframe");
+    printFrame.style.position = "fixed";
+    printFrame.style.right = "0";
+    printFrame.style.bottom = "0";
+    printFrame.style.width = "0";
+    printFrame.style.height = "0";
+    printFrame.style.border = "0";
+    printFrame.setAttribute("aria-hidden", "true");
+    document.body.appendChild(printFrame);
+
+    const cleanup = () => {
+      printFrame.remove();
+    };
+    const frameWindow = printFrame.contentWindow;
+    if (!frameWindow) {
+      cleanup();
+      setError("Could not open print preview.");
+      return;
+    }
+
+    frameWindow.document.open();
+    frameWindow.document.write(reportHtml);
+    frameWindow.document.close();
+
+    frameWindow.addEventListener("afterprint", cleanup, { once: true });
+    setTimeout(cleanup, 60_000);
+    setTimeout(() => {
+      frameWindow.focus();
+      frameWindow.print();
+    }, 150);
   };
 
   useEffect(() => {
@@ -257,7 +475,10 @@ export const WorkOrderDetailPage = () => {
                   <strong>Status:</strong> {workOrder.status}
                 </p>
                 <p>
-                  <strong>Lead Technician:</strong> {workOrder.lead_technician_id ?? "-"}
+                  <strong>Lead Technician:</strong> {leadTechnicianLabel}
+                </p>
+                <p>
+                  <strong>Facility:</strong> {workOrder.facility_name}
                 </p>
               </div>
               <div className="rounded border p-3">
@@ -269,7 +490,10 @@ export const WorkOrderDetailPage = () => {
                   {workOrder.updated_at ? new Date(workOrder.updated_at).toLocaleString() : "-"}
                 </p>
                 <p>
-                  <strong>Service Request:</strong> {workOrder.service_request_id ?? "-"}
+                  <strong>Service Request:</strong> {serviceRequestLabel}
+                </p>
+                <p>
+                  <strong>Zone / Room:</strong> {workOrder.zone_name ?? "-"}
                 </p>
               </div>
             </div>
@@ -541,7 +765,9 @@ export const WorkOrderDetailPage = () => {
                             <td className="py-2 pr-3">{entry.entry_date}</td>
                             <td className="py-2 pr-3">{Number(entry.hours).toFixed(2)}</td>
                             <td className="py-2 pr-3">{entry.entry_type}</td>
-                            <td className="py-2 pr-3">{entry.technician_id}</td>
+                            <td className="py-2 pr-3">
+                              {resolveTechnicianLabel(entry.technician_id, entry.technician_name)}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -628,6 +854,21 @@ export const WorkOrderDetailPage = () => {
                 )}
               </div>
             )}
+          </section>
+
+          <section className="rounded-2xl bg-fsm-panel shadow p-6">
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={generatePdfReport}
+                className="rounded bg-fsm-accent text-white px-4 py-2 text-sm hover:bg-fsm-accentDark"
+              >
+                Generate Work Order PDF
+              </button>
+            </div>
+            <p className="text-xs text-slate-600 mt-2 text-right">
+              Opens a print-ready report. Choose "Save as PDF" in the print dialog.
+            </p>
           </section>
         </>
       )}

@@ -11,6 +11,22 @@ Field Service Management (FSM) full-stack baseline:
 - Frontend: React + TypeScript + Vite + Tailwind CSS
 - Database: PostgreSQL with SQL schema/seed scripts
 
+## Recent Capabilities
+
+- Facilities management:
+  - Admin Facilities page with searchable table (name, city, zipcode filters)
+  - Right-side overlay workflows for Add Facility, View Details, and Edit Details
+  - Facility details include name, address, city, zipcode, contact info, and dynamic zones/rooms
+- Facility-driven request/order creation:
+  - Public service request form now uses configured facilities/zones
+  - Work order creation requires Facility Name and supports Zone/Room selection
+- User page-access management:
+  - Admin can assign page visibility per user from Admin Users
+  - Navigation and protected routes respect per-user page access settings
+- Reports UX:
+  - Separate labor and cost parameter sections
+  - Output options: on-screen (new window), PDF, CSV
+
 ## Project Structure
 
 ```text
@@ -30,6 +46,7 @@ Field Service Management (FSM) full-stack baseline:
    - Run `db/schema.sql`
    - Run `db/seed.sql`
    - Optional demo data: run `db/seed_demo.sql`
+   - Note: backend bootstrap migrations also add missing runtime columns/tables on startup
 4. Start backend:
    - `cd backend`
    - `npm install`

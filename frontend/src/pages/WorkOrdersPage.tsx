@@ -4,7 +4,7 @@ import { AppShell } from "../components/AppShell";
 import { api } from "../modules/api/client";
 import { useAuth } from "../modules/auth/AuthContext";
 import { hasAnyRole } from "../modules/auth/roles";
-import type { WorkOrder } from "../types";
+import type { Facility, WorkOrder } from "../types";
 
 const statuses = [
   "CREATED",
@@ -23,7 +23,8 @@ export const WorkOrdersPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ title: "", description: "" });
+  const [facilities, setFacilities] = useState<Facility[]>([]);
+  const [form, setForm] = useState({ title: "", description: "", facilityName: "", zoneName: "" });
 
   const canManage = useMemo(
     () => hasAnyRole(user?.roles, ["MANAGER", "ADMIN"]),
@@ -60,6 +61,27 @@ export const WorkOrdersPage = () => {
     void load();
   }, [searchParams]);
 
+  useEffect(() => {
+    const loadFacilities = async () => {
+      try {
+        const response = await api.get<Facility[]>("/facilities");
+        setFacilities(response.data);
+        setForm((prev) => {
+          if (prev.facilityName || response.data.length === 0) return prev;
+          const first = response.data[0];
+          return {
+            ...prev,
+            facilityName: first.name,
+            zoneName: first.zones[0] ?? ""
+          };
+        });
+      } catch {
+        setError("Failed to load facilities.");
+      }
+    };
+    void loadFacilities();
+  }, []);
+
   const createWorkOrder = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!canManage) return;
@@ -67,7 +89,7 @@ export const WorkOrdersPage = () => {
     setError(null);
     try {
       await api.post("/work-orders", form);
-      setForm({ title: "", description: "" });
+      setForm((prev) => ({ ...prev, title: "", description: "" }));
       await load();
     } catch {
       setError("Failed to create work order.");
@@ -98,6 +120,9 @@ export const WorkOrdersPage = () => {
     }
   };
 
+  const zonesForSelectedFacility =
+    facilities.find((facility) => facility.name === form.facilityName)?.zones ?? [];
+
   return (
     <AppShell title="Work Orders">
       {canManage && (
@@ -118,10 +143,53 @@ export const WorkOrdersPage = () => {
               className="rounded border px-3 py-2 min-h-24"
               required
             />
+            <div className="grid md:grid-cols-2 gap-3">
+              <label className="grid gap-1">
+                <span className="text-sm text-slate-700">Facility Name</span>
+                <select
+                  className="rounded border px-3 py-2"
+                  value={form.facilityName}
+                  onChange={(e) => {
+                    const facilityName = e.target.value;
+                    const nextZones = facilities.find((facility) => facility.name === facilityName)?.zones ?? [];
+                    setForm((prev) => ({
+                      ...prev,
+                      facilityName,
+                      zoneName: nextZones[0] ?? ""
+                    }));
+                  }}
+                  required
+                >
+                  <option value="" disabled>
+                    Select facility
+                  </option>
+                  {facilities.map((facility) => (
+                    <option key={facility.id} value={facility.name}>
+                      {facility.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid gap-1">
+                <span className="text-sm text-slate-700">Zone / Room</span>
+                <select
+                  className="rounded border px-3 py-2"
+                  value={form.zoneName}
+                  onChange={(e) => setForm((prev) => ({ ...prev, zoneName: e.target.value }))}
+                >
+                  <option value="">Select zone</option>
+                  {zonesForSelectedFacility.map((zone) => (
+                    <option key={zone} value={zone}>
+                      {zone}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
             <div>
               <button
                 type="submit"
-                disabled={saving}
+                disabled={saving || facilities.length === 0}
                 className="rounded-lg bg-fsm-accent text-white px-4 py-2 font-semibold hover:bg-fsm-accentDark disabled:opacity-50"
               >
                 {saving ? "Creating..." : "Create Work Order"}
@@ -152,6 +220,8 @@ export const WorkOrdersPage = () => {
                 <tr className="text-left border-b">
                   <th className="py-2 pr-4">WO #</th>
                   <th className="py-2 pr-4">Title</th>
+                  <th className="py-2 pr-4">Facility</th>
+                  <th className="py-2 pr-4">Zone</th>
                   <th className="py-2 pr-4">Status</th>
                   <th className="py-2 pr-4">Created</th>
                   {canManage && <th className="py-2 pr-4">Actions</th>}
@@ -167,6 +237,8 @@ export const WorkOrdersPage = () => {
                       </Link>
                       <p className="text-slate-600">{wo.description}</p>
                     </td>
+                    <td className="py-2 pr-4">{wo.facility_name}</td>
+                    <td className="py-2 pr-4">{wo.zone_name ?? "-"}</td>
                     <td className="py-2 pr-4">{wo.status}</td>
                     <td className="py-2 pr-4">{new Date(wo.created_at).toLocaleString()}</td>
                     {canManage && (

@@ -6,17 +6,31 @@
 
 :root {
   font-family: "Poppins", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  --fsm-bg: 248 251 255;
+  --fsm-panel: 255 255 255;
+  --fsm-ink: 15 23 42;
+  --fsm-ink-muted: 71 85 105;
+  --fsm-border: 203 213 225;
+  --fsm-accent: 66 133 244;
+  --fsm-accent-dark: 26 115 232;
+  --fsm-blue-soft: 239 246 255;
+  --fsm-blue-soft-hover: 219 234 254;
+  --fsm-blue-soft-2: 231 240 255;
+  --fsm-blue-soft-3: 219 234 254;
+  --fsm-red-soft: 254 226 226;
+  --fsm-red-soft-hover: 254 202 202;
+  --fsm-red-accent: 239 68 68;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
   background:
-    radial-gradient(1200px 780px at 90% -20%, rgba(150, 170, 161, 0.3), transparent 64%),
-    radial-gradient(1000px 700px at -10% 120%, rgba(68, 102, 108, 0.45), transparent 60%),
-    radial-gradient(700px 420px at 18% 20%, rgba(190, 121, 74, 0.18), transparent 62%),
-    linear-gradient(140deg, #35595e 0%, #2e5056 52%, #27464b 100%);
-  color: #2b241f;
+    radial-gradient(1000px 760px at 92% -22%, rgb(var(--fsm-accent) / 0.18), transparent 64%),
+    radial-gradient(900px 650px at -12% 118%, rgb(var(--fsm-accent-dark) / 0.14), transparent 60%),
+    radial-gradient(700px 460px at 78% 84%, rgb(var(--fsm-red-accent) / 0.08), transparent 62%),
+    linear-gradient(180deg, rgb(var(--fsm-bg)) 0%, rgb(var(--fsm-blue-soft)) 52%, rgb(var(--fsm-bg)) 100%);
+  color: rgb(var(--fsm-ink));
 }
 
 #root {

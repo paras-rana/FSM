@@ -47,13 +47,16 @@ laborEntriesRouter.get("/", async (req, res, next) => {
     if (isManagerOrAdmin) {
       const technicianId = technicianIdFilter;
       const { rows } = await pool.query(
-        `SELECT id, work_order_id, technician_id, hours, entry_type, entry_date, created_at
-         FROM labor_entries
-         WHERE ($3::text IS NULL OR work_order_id = $3)
-           AND ($4::date IS NULL OR entry_date >= $4::date)
-           AND ($5::date IS NULL OR entry_date <= $5::date)
-           AND ($6::text IS NULL OR technician_id = $6)
-         ORDER BY entry_date DESC
+        `SELECT le.id, le.work_order_id, le.technician_id, le.hours, le.entry_type, le.entry_date, le.created_at,
+                u.full_name AS technician_name, wo.wo_number AS work_order_number
+         FROM labor_entries le
+         LEFT JOIN users u ON u.id = le.technician_id
+         LEFT JOIN work_orders wo ON wo.id = le.work_order_id
+         WHERE ($3::text IS NULL OR le.work_order_id = $3)
+           AND ($4::date IS NULL OR le.entry_date >= $4::date)
+           AND ($5::date IS NULL OR le.entry_date <= $5::date)
+           AND ($6::text IS NULL OR le.technician_id = $6)
+         ORDER BY le.entry_date DESC
          LIMIT $1 OFFSET $2`,
         [limit, offset, workOrderId, from, to, technicianId]
       );
@@ -62,13 +65,16 @@ laborEntriesRouter.get("/", async (req, res, next) => {
     }
 
     const { rows } = await pool.query(
-      `SELECT id, work_order_id, technician_id, hours, entry_type, entry_date, created_at
-       FROM labor_entries
-       WHERE technician_id = $1
-         AND ($4::text IS NULL OR work_order_id = $4)
-         AND ($5::date IS NULL OR entry_date >= $5::date)
-         AND ($6::date IS NULL OR entry_date <= $6::date)
-       ORDER BY entry_date DESC
+      `SELECT le.id, le.work_order_id, le.technician_id, le.hours, le.entry_type, le.entry_date, le.created_at,
+              u.full_name AS technician_name, wo.wo_number AS work_order_number
+       FROM labor_entries le
+       LEFT JOIN users u ON u.id = le.technician_id
+       LEFT JOIN work_orders wo ON wo.id = le.work_order_id
+       WHERE le.technician_id = $1
+         AND ($4::text IS NULL OR le.work_order_id = $4)
+         AND ($5::date IS NULL OR le.entry_date >= $5::date)
+         AND ($6::date IS NULL OR le.entry_date <= $6::date)
+       ORDER BY le.entry_date DESC
        LIMIT $2 OFFSET $3`,
       [req.user!.id, limit, offset, workOrderId, from, to]
     );

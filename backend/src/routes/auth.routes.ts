@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { pool } from "../db/pool";
+import { resolveEffectivePageAccess } from "../utils/page-access";
 import { signToken } from "../utils/jwt";
 import { verifyPassword } from "../utils/password";
 import type { RoleName } from "../utils/roles";
@@ -21,10 +22,16 @@ authRouter.post("/login", async (req, res, next) => {
     }
 
     const { rows } = await pool.query(
-      `SELECT u.id, u.email, u.password_hash, COALESCE(array_agg(r.name) FILTER (WHERE r.name IS NOT NULL), '{}') AS roles
+      `SELECT
+         u.id,
+         u.email,
+         u.password_hash,
+         COALESCE(array_agg(DISTINCT r.name) FILTER (WHERE r.name IS NOT NULL), '{}') AS roles,
+         COALESCE(array_agg(DISTINCT upa.page_key) FILTER (WHERE upa.page_key IS NOT NULL), '{}') AS page_access
        FROM users u
        LEFT JOIN user_roles ur ON ur.user_id = u.id
        LEFT JOIN roles r ON r.id = ur.role_id
+       LEFT JOIN user_page_access upa ON upa.user_id = u.id
        WHERE lower(u.email) = lower($1)
        GROUP BY u.id`,
       [parsed.data.email]
@@ -43,6 +50,7 @@ authRouter.post("/login", async (req, res, next) => {
     }
 
     const roles = user.roles as RoleName[];
+    const pageAccess = resolveEffectivePageAccess(user.page_access as string[]);
     const token = signToken({
       sub: user.id,
       email: user.email,
@@ -54,7 +62,8 @@ authRouter.post("/login", async (req, res, next) => {
       user: {
         id: user.id,
         email: user.email,
-        roles
+        roles,
+        pageAccess
       }
     });
   } catch (error) {

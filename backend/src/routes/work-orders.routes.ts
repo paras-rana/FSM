@@ -10,6 +10,8 @@ import { canTransitionStatus, type WorkOrderStatus } from "../utils/work-order-s
 const createSchema = z.object({
   title: z.string().min(1),
   description: z.string().min(1),
+  facilityName: z.string().min(1),
+  zoneName: z.string().optional().nullable(),
   leadTechnicianId: z.string().optional().nullable(),
   serviceRequestId: z.string().optional().nullable()
 });
@@ -53,15 +55,19 @@ workOrdersRouter.get("/", async (req, res, next) => {
       assignedOnlyRaw === null ? null : assignedOnlyRaw === "true" || assignedOnlyRaw === "1";
 
     const { rows } = await pool.query(
-      `SELECT id, wo_number, title, description, status, lead_technician_id, service_request_id, created_at, updated_at
-       FROM work_orders
-       WHERE ($3::text[] IS NULL OR status = ANY($3::text[]))
-         AND ($4::text[] IS NULL OR NOT (status = ANY($4::text[])))
-         AND ($5::text IS NULL OR lead_technician_id = $5)
-         AND ($6::timestamptz IS NULL OR COALESCE(updated_at, created_at) >= $6::timestamptz)
-         AND ($7::timestamptz IS NULL OR COALESCE(updated_at, created_at) < $7::timestamptz)
-         AND ($8::boolean IS NULL OR $8 = false OR lead_technician_id IS NOT NULL)
-       ORDER BY created_at DESC
+      `SELECT wo.id, wo.wo_number, wo.title, wo.description, wo.status, wo.lead_technician_id, wo.service_request_id,
+              wo.facility_name, wo.zone_name,
+              wo.created_at, wo.updated_at, lt.full_name AS lead_technician_name, sr.sr_number AS service_request_number
+       FROM work_orders wo
+       LEFT JOIN users lt ON lt.id = wo.lead_technician_id
+       LEFT JOIN service_requests sr ON sr.id = wo.service_request_id
+       WHERE ($3::text[] IS NULL OR wo.status = ANY($3::text[]))
+         AND ($4::text[] IS NULL OR NOT (wo.status = ANY($4::text[])))
+         AND ($5::text IS NULL OR wo.lead_technician_id = $5)
+         AND ($6::timestamptz IS NULL OR COALESCE(wo.updated_at, wo.created_at) >= $6::timestamptz)
+         AND ($7::timestamptz IS NULL OR COALESCE(wo.updated_at, wo.created_at) < $7::timestamptz)
+         AND ($8::boolean IS NULL OR $8 = false OR wo.lead_technician_id IS NOT NULL)
+       ORDER BY wo.created_at DESC
        LIMIT $1 OFFSET $2`,
       [
         limit,
@@ -83,9 +89,13 @@ workOrdersRouter.get("/", async (req, res, next) => {
 workOrdersRouter.get("/:id", async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT id, wo_number, title, description, status, lead_technician_id, service_request_id, created_at, updated_at
-       FROM work_orders
-       WHERE id = $1`,
+      `SELECT wo.id, wo.wo_number, wo.title, wo.description, wo.status, wo.lead_technician_id, wo.service_request_id,
+              wo.facility_name, wo.zone_name,
+              wo.created_at, wo.updated_at, lt.full_name AS lead_technician_name, sr.sr_number AS service_request_number
+       FROM work_orders wo
+       LEFT JOIN users lt ON lt.id = wo.lead_technician_id
+       LEFT JOIN service_requests sr ON sr.id = wo.service_request_id
+       WHERE wo.id = $1`,
       [req.params.id]
     );
     if (rows.length === 0) {
@@ -108,13 +118,17 @@ workOrdersRouter.post("/", authorize("MANAGER", "ADMIN"), async (req, res, next)
 
     const id = createCuidLikeId();
     const { rows } = await pool.query(
-      `INSERT INTO work_orders (id, title, description, lead_technician_id, service_request_id)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, wo_number, title, description, status, lead_technician_id, service_request_id, created_at, updated_at`,
+      `INSERT INTO work_orders (id, title, description, facility_name, zone_name, lead_technician_id, service_request_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, wo_number, title, description, status, lead_technician_id, service_request_id, facility_name, zone_name, created_at, updated_at,
+                 (SELECT full_name FROM users WHERE id = work_orders.lead_technician_id) AS lead_technician_name,
+                 (SELECT sr_number FROM service_requests WHERE id = work_orders.service_request_id) AS service_request_number`,
       [
         id,
         parsed.data.title,
         parsed.data.description,
+        parsed.data.facilityName.trim(),
+        parsed.data.zoneName ?? null,
         parsed.data.leadTechnicianId ?? null,
         parsed.data.serviceRequestId ?? null
       ]
@@ -167,7 +181,9 @@ workOrdersRouter.patch("/:id", authorize("MANAGER", "ADMIN"), async (req, res, n
       `UPDATE work_orders
        SET ${fields.join(", ")}, updated_at = now()
        WHERE id = $1
-       RETURNING id, wo_number, title, description, status, lead_technician_id, service_request_id, created_at, updated_at`,
+       RETURNING id, wo_number, title, description, status, lead_technician_id, service_request_id, facility_name, zone_name, created_at, updated_at,
+                 (SELECT full_name FROM users WHERE id = work_orders.lead_technician_id) AS lead_technician_name,
+                 (SELECT sr_number FROM service_requests WHERE id = work_orders.service_request_id) AS service_request_number`,
       values
     );
 
@@ -212,7 +228,9 @@ workOrdersRouter.post("/:id/status", authorize("MANAGER", "ADMIN"), async (req, 
       `UPDATE work_orders
        SET status = $2, updated_at = now()
        WHERE id = $1
-       RETURNING id, wo_number, title, description, status, lead_technician_id, service_request_id, created_at, updated_at`,
+       RETURNING id, wo_number, title, description, status, lead_technician_id, service_request_id, facility_name, zone_name, created_at, updated_at,
+                 (SELECT full_name FROM users WHERE id = work_orders.lead_technician_id) AS lead_technician_name,
+                 (SELECT sr_number FROM service_requests WHERE id = work_orders.service_request_id) AS service_request_number`,
       [req.params.id, nextStatus]
     );
 
@@ -245,7 +263,9 @@ workOrdersRouter.post("/:id/archive", authorize("MANAGER", "ADMIN"), async (req,
       `UPDATE work_orders
        SET status = 'ARCHIVED', updated_at = now()
        WHERE id = $1
-       RETURNING id, wo_number, title, description, status, lead_technician_id, service_request_id, created_at, updated_at`,
+       RETURNING id, wo_number, title, description, status, lead_technician_id, service_request_id, facility_name, zone_name, created_at, updated_at,
+                 (SELECT full_name FROM users WHERE id = work_orders.lead_technician_id) AS lead_technician_name,
+                 (SELECT sr_number FROM service_requests WHERE id = work_orders.service_request_id) AS service_request_number`,
       [req.params.id]
     );
 

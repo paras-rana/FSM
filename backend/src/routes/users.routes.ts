@@ -3,6 +3,7 @@ import { z } from "zod";
 import { pool } from "../db/pool";
 import { authorize } from "../middleware/authorize";
 import { createCuidLikeId } from "../utils/id";
+import { ALL_PAGE_ACCESS_KEYS, isPageAccessKey, resolveEffectivePageAccess } from "../utils/page-access";
 import { hashPassword } from "../utils/password";
 
 const createUserSchema = z.object({
@@ -19,6 +20,10 @@ const resetPasswordSchema = z.object({
   newPassword: z.string().min(8)
 });
 
+const setPageAccessSchema = z.object({
+  pages: z.array(z.string())
+});
+
 export const usersRouter = Router();
 
 usersRouter.use(authorize("ADMIN"));
@@ -30,6 +35,10 @@ usersRouter.get("/roles", async (_req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+usersRouter.get("/pages", async (_req, res) => {
+  res.json(ALL_PAGE_ACCESS_KEYS);
 });
 
 usersRouter.get("/", async (_req, res, next) => {
@@ -66,6 +75,22 @@ usersRouter.get("/:id", async (req, res, next) => {
       return;
     }
     res.json(rows[0]);
+  } catch (error) {
+    next(error);
+  }
+});
+
+usersRouter.get("/:id/page-access", async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT page_key
+       FROM user_page_access
+       WHERE user_id = $1
+       ORDER BY page_key ASC`,
+      [req.params.id]
+    );
+    const pageAccess = resolveEffectivePageAccess(rows.map((row) => row.page_key as string));
+    res.json({ userId: req.params.id, pages: pageAccess });
   } catch (error) {
     next(error);
   }
@@ -144,6 +169,33 @@ usersRouter.patch("/:id/password", async (req, res, next) => {
       return;
     }
     res.json({ message: "Password reset successful" });
+  } catch (error) {
+    next(error);
+  }
+});
+
+usersRouter.post("/:id/page-access", async (req, res, next) => {
+  try {
+    const parsed = setPageAccessSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ message: "Invalid payload" });
+      return;
+    }
+
+    const pages = Array.from(new Set(parsed.data.pages));
+    if (!pages.every(isPageAccessKey)) {
+      res.status(400).json({ message: "One or more pages are invalid" });
+      return;
+    }
+
+    const userId = req.params.id;
+    await pool.query(`DELETE FROM user_page_access WHERE user_id = $1`, [userId]);
+
+    for (const page of pages) {
+      await pool.query(`INSERT INTO user_page_access (user_id, page_key) VALUES ($1, $2)`, [userId, page]);
+    }
+
+    res.json({ message: "Page access updated", pages });
   } catch (error) {
     next(error);
   }

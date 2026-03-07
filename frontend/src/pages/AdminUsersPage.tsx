@@ -3,7 +3,7 @@ import { AppShell } from "../components/AppShell";
 import { api } from "../modules/api/client";
 import { useAuth } from "../modules/auth/AuthContext";
 import { hasAnyRole } from "../modules/auth/roles";
-import type { RoleName } from "../types";
+import type { PageAccessKey, RoleName } from "../types";
 
 type AdminUser = {
   id: string;
@@ -17,16 +17,24 @@ type RoleOption = {
   id: string;
   name: RoleName;
 };
+type PageAccessResponse = {
+  userId: string;
+  pages: PageAccessKey[];
+};
 
 export const AdminUsersPage = () => {
   const { user } = useAuth();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [roles, setRoles] = useState<RoleOption[]>([]);
+  const [pages, setPages] = useState<PageAccessKey[]>([]);
   const [selectedRoles, setSelectedRoles] = useState<Record<string, RoleName[]>>({});
   const [passwordDrafts, setPasswordDrafts] = useState<Record<string, string>>({});
+  const [selectedUserId, setSelectedUserId] = useState("");
+  const [selectedPages, setSelectedPages] = useState<PageAccessKey[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingPages, setSavingPages] = useState(false);
   const [newUser, setNewUser] = useState({
     email: "",
     fullName: "",
@@ -45,11 +53,15 @@ export const AdminUsersPage = () => {
       ]);
       setUsers(usersRes.data);
       setRoles(rolesRes.data);
+      const pagesRes = await api.get<PageAccessKey[]>("/users/pages");
+      setPages(pagesRes.data);
       const draft: Record<string, RoleName[]> = {};
       for (const u of usersRes.data) {
         draft[u.id] = u.roles;
       }
       setSelectedRoles(draft);
+      const firstUserId = usersRes.data[0]?.id ?? "";
+      setSelectedUserId((prev) => prev || firstUserId);
     } catch {
       setError("Failed to load users/roles.");
     } finally {
@@ -61,6 +73,22 @@ export const AdminUsersPage = () => {
     if (!isAdmin) return;
     void load();
   }, [isAdmin]);
+
+  useEffect(() => {
+    if (!selectedUserId) {
+      setSelectedPages([]);
+      return;
+    }
+    const loadPageAccess = async () => {
+      try {
+        const response = await api.get<PageAccessResponse>(`/users/${selectedUserId}/page-access`);
+        setSelectedPages(response.data.pages);
+      } catch {
+        setError("Failed to load page access.");
+      }
+    };
+    void loadPageAccess();
+  }, [selectedUserId]);
 
   const createUser = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -115,6 +143,29 @@ export const AdminUsersPage = () => {
       setError("Failed to reset password.");
     }
   };
+
+  const togglePageAccess = (page: PageAccessKey) => {
+    setSelectedPages((prev) =>
+      prev.includes(page) ? prev.filter((p) => p !== page) : [...prev, page]
+    );
+  };
+
+  const savePageAccess = async () => {
+    if (!selectedUserId) return;
+    setSavingPages(true);
+    setError(null);
+    try {
+      await api.post(`/users/${selectedUserId}/page-access`, {
+        pages: selectedPages
+      });
+    } catch {
+      setError("Failed to update page access.");
+    } finally {
+      setSavingPages(false);
+    }
+  };
+
+  const selectedUser = users.find((u) => u.id === selectedUserId);
 
   if (!isAdmin) {
     return (
@@ -230,7 +281,50 @@ export const AdminUsersPage = () => {
           </div>
         )}
       </section>
+
+      <section className="rounded-2xl bg-fsm-panel shadow p-6">
+        <h2 className="text-xl font-semibold mb-3">Page Access Management</h2>
+        <div className="grid md:grid-cols-2 gap-3 mb-4">
+          <label className="grid gap-1">
+            <span className="text-sm text-slate-700">Select User</span>
+            <select
+              className="rounded border px-3 py-2"
+              value={selectedUserId}
+              onChange={(e) => setSelectedUserId(e.target.value)}
+            >
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.full_name} ({u.email})
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="text-sm text-slate-600 self-end">
+            {selectedUser ? `Editing access for ${selectedUser.full_name}` : "No user selected"}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2 mb-4">
+          {pages.map((page) => (
+            <label key={page} className="inline-flex items-center gap-2 rounded border px-3 py-2 text-sm">
+              <input
+                type="checkbox"
+                checked={selectedPages.includes(page)}
+                onChange={() => togglePageAccess(page)}
+              />
+              {page.replace(/-/g, " ")}
+            </label>
+          ))}
+        </div>
+
+        <button
+          className="rounded bg-fsm-accent text-white px-3 py-2 hover:bg-fsm-accentDark disabled:opacity-50"
+          onClick={() => void savePageAccess()}
+          disabled={!selectedUserId || savingPages}
+        >
+          {savingPages ? "Saving..." : "Save Page Access"}
+        </button>
+      </section>
     </AppShell>
   );
 };
-

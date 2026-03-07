@@ -12,6 +12,9 @@ import { ServiceRequestDetailPage } from "./pages/ServiceRequestDetailPage";
 import { TimeSheetPage } from "./pages/TimeSheetPage";
 import { WorkOrderDetailPage } from "./pages/WorkOrderDetailPage";
 import { WorkOrdersPage } from "./pages/WorkOrdersPage";
+import { ReportsPage } from "./pages/ReportsPage";
+import { ThemeTemplatesPage } from "./pages/ThemeTemplatesPage";
+import { FacilitiesPage } from "./pages/FacilitiesPage";
 
 export const App = () => {
   return (
@@ -21,7 +24,7 @@ export const App = () => {
       <Route
         path="/dashboard"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute requiredPage="dashboard">
             <DashboardPage />
           </ProtectedRoute>
         }
@@ -29,7 +32,7 @@ export const App = () => {
       <Route
         path="/work-orders"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute requiredPage="work-orders">
             <WorkOrdersPage />
           </ProtectedRoute>
         }
@@ -37,7 +40,7 @@ export const App = () => {
       <Route
         path="/work-orders/:id"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute requiredPage="work-orders">
             <WorkOrderDetailPage />
           </ProtectedRoute>
         }
@@ -45,7 +48,7 @@ export const App = () => {
       <Route
         path="/service-requests"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute requiredPage="service-requests">
             <ServiceRequestsPage />
           </ProtectedRoute>
         }
@@ -53,7 +56,7 @@ export const App = () => {
       <Route
         path="/service-requests/:id"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute requiredPage="service-requests">
             <ServiceRequestDetailPage />
           </ProtectedRoute>
         }
@@ -61,7 +64,7 @@ export const App = () => {
       <Route
         path="/timesheet"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute requiredPage="timesheet">
             <TimeSheetPage />
           </ProtectedRoute>
         }
@@ -73,7 +76,7 @@ export const App = () => {
       <Route
         path="/notifications"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute requiredPage="notifications">
             <NotificationsPage />
           </ProtectedRoute>
         }
@@ -81,7 +84,7 @@ export const App = () => {
       <Route
         path="/costs"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute requiredPage="costs">
             <CostsPage />
           </ProtectedRoute>
         }
@@ -89,15 +92,39 @@ export const App = () => {
       <Route
         path="/attachments"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute requiredPage="attachments">
             <AttachmentsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/reports"
+        element={
+          <ProtectedRoute requiredPage="reports">
+            <ReportsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/theme-templates"
+        element={
+          <ProtectedRoute requiredPage="theme-templates">
+            <ThemeTemplatesPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/facilities"
+        element={
+          <ProtectedRoute requiredPage="facilities">
+            <FacilitiesPage />
           </ProtectedRoute>
         }
       />
       <Route
         path="/admin/users"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute requiredPage="admin-users">
             <AdminUsersPage />
           </ProtectedRoute>
         }

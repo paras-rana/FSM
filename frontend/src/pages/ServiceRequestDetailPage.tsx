@@ -82,10 +82,10 @@ export const ServiceRequestDetailPage = () => {
               </div>
               <div className="rounded border p-3">
                 <p>
-                  <strong>Building:</strong> {item.building}
+                  <strong>Facility:</strong> {item.building}
                 </p>
                 <p>
-                  <strong>Room / Area:</strong> {item.area}
+                  <strong>Zone / Room:</strong> {item.area}
                 </p>
                 <p>
                   <strong>Created:</strong> {new Date(item.created_at).toLocaleString()}

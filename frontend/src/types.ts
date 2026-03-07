@@ -1,9 +1,22 @@
 export type RoleName = "TECHNICIAN" | "MANAGER" | "ACCOUNTANT" | "ADMIN";
+export type PageAccessKey =
+  | "dashboard"
+  | "work-orders"
+  | "service-requests"
+  | "timesheet"
+  | "costs"
+  | "reports"
+  | "theme-templates"
+  | "facilities"
+  | "attachments"
+  | "notifications"
+  | "admin-users";
 
 export type AuthUser = {
   id: string;
   email: string;
   roles: RoleName[];
+  pageAccess?: PageAccessKey[];
 };
 
 export type WorkOrder = {
@@ -12,8 +25,12 @@ export type WorkOrder = {
   title: string;
   description: string;
   status: string;
+  facility_name: string;
+  zone_name?: string | null;
   lead_technician_id?: string | null;
+  lead_technician_name?: string | null;
   service_request_id?: string | null;
+  service_request_number?: number | null;
   created_at: string;
   updated_at?: string;
 };
@@ -37,7 +54,9 @@ export type ServiceRequest = {
 export type LaborEntry = {
   id: string;
   work_order_id: string | null;
+  work_order_number?: number | null;
   technician_id: string;
+  technician_name?: string | null;
   hours: number;
   entry_type: "WORK_ORDER" | "TRAINING" | "MEETING" | "ADMIN";
   entry_date: string;
@@ -120,6 +139,16 @@ export type DashboardServiceRequestItem = {
   area?: string;
   urgency?: "HIGH" | "MEDIUM" | "LOW";
   created_at: string;
+};
+
+export type Facility = {
+  id: string;
+  name: string;
+  address: string;
+  city: string;
+  zipcode: string;
+  contact_info: string;
+  zones: string[];
 };
 
 export type DashboardClosedByWeek = {

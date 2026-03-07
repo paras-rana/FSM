@@ -81,7 +81,7 @@ export const LaborTimesheetPage = () => {
           <h2 className="text-xl font-semibold">Log Labor Entry</h2>
           <form className="mt-4 grid md:grid-cols-4 gap-3" onSubmit={submit}>
             <input
-              placeholder="Work Order ID (optional)"
+              placeholder="Work Order (optional)"
               className="rounded border px-3 py-2"
               value={form.workOrderId}
               onChange={(e) => setForm((p) => ({ ...p, workOrderId: e.target.value }))}
@@ -172,7 +172,7 @@ export const LaborTimesheetPage = () => {
                   <th className="py-2 pr-4">Hours</th>
                   <th className="py-2 pr-4">Type</th>
                   <th className="py-2 pr-4">Work Order</th>
-                  {isManagerOrAdmin && <th className="py-2 pr-4">Technician ID</th>}
+                  {isManagerOrAdmin && <th className="py-2 pr-4">Technician</th>}
                 </tr>
               </thead>
               <tbody>
@@ -181,8 +181,12 @@ export const LaborTimesheetPage = () => {
                     <td className="py-2 pr-4">{entry.entry_date}</td>
                     <td className="py-2 pr-4">{Number(entry.hours).toFixed(2)}</td>
                     <td className="py-2 pr-4">{entry.entry_type}</td>
-                    <td className="py-2 pr-4">{entry.work_order_id ?? "-"}</td>
-                    {isManagerOrAdmin && <td className="py-2 pr-4">{entry.technician_id}</td>}
+                    <td className="py-2 pr-4">
+                      {entry.work_order_number ? `WO-${entry.work_order_number}` : "-"}
+                    </td>
+                    {isManagerOrAdmin && (
+                      <td className="py-2 pr-4">{entry.technician_name ?? "Unknown Technician"}</td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -193,4 +197,3 @@ export const LaborTimesheetPage = () => {
     </AppShell>
   );
 };
-

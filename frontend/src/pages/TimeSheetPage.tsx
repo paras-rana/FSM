@@ -234,14 +234,14 @@ export const TimeSheetPage = () => {
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
-                className={`rounded px-3 py-2 text-sm ${viewMode === "day" ? "bg-fsm-accent text-white" : "bg-[#f1e4d6] border border-[#caa98a] text-fsm-ink"}`}
+                className={`rounded px-3 py-2 text-sm ${viewMode === "day" ? "bg-fsm-accent text-white" : "bg-fsm-blue-soft border border-fsm-blue-soft-hover text-fsm-ink"}`}
                 onClick={() => setViewMode("day")}
               >
                 Day
               </button>
               <button
                 type="button"
-                className={`rounded px-3 py-2 text-sm ${viewMode === "week" ? "bg-fsm-accent text-white" : "bg-[#f1e4d6] border border-[#caa98a] text-fsm-ink"}`}
+                className={`rounded px-3 py-2 text-sm ${viewMode === "week" ? "bg-fsm-accent text-white" : "bg-fsm-blue-soft border border-fsm-blue-soft-hover text-fsm-ink"}`}
                 onClick={() => setViewMode("week")}
               >
                 Week
