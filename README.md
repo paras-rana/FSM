@@ -26,15 +26,42 @@ Field Service Management (FSM) full-stack baseline:
 - Reports UX:
   - Separate labor and cost parameter sections
   - Output options: on-screen (new window), PDF, CSV
+- Authentication and shell UX refresh:
+  - Login screen redesigned with right-side sign-in panel and left hero image/quote
+  - User menu moved to header (logout available from username dropdown/banner)
+- Visual styling baseline update:
+  - Clean white application surfaces with consistent band highlights
+  - Left-edge band styling in sidebar navigation
+  - Active nav item uses full-edge highlight treatment
+  - App-wide button styling standardized to a light-blue style
+- Dashboard KPI updates:
+  - Replaced "Closed This Week" KPI with:
+    - Total Cost this month and last month (material + vendor)
+    - Total Labor this month and last month
+- Work Orders page workflow changes:
+  - Inline create section replaced by a right-slide overlay form
+  - Top filters now include Facility, Status, and Date Range
+  - Filters apply through an explicit "Apply Filters" button
+  - Pagination added at 25 results per page (Previous/Next navigation)
+  - Removed inline "Set Status" action from the list page
+- Work Order Detail enhancements:
+  - Status moved into the top header area (right-aligned)
+  - "Update Status" now opens an overlay to select and save status
+  - Description moved to top of overview content
+  - Removed "Back to Work Orders" link from detail header
+- Theme management update:
+  - Current white/blue styling set as default app theme
+  - Legacy preset themes removed
+  - New related presets added (for example: Skyline Light, Slate Breeze)
 
 ## Project Structure
 
 ```text
 .
-├─ backend
-├─ db
-├─ frontend
-└─ docker-compose.yml
+|-- backend
+|-- db
+|-- frontend
+`-- docker-compose.yml
 ```
 
 ## Quick Start
