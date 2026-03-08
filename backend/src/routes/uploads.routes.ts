@@ -80,14 +80,41 @@ uploadsRouter.get("/", async (req, res, next) => {
     const { limit, offset } = parseLimitOffset(req);
     const entityType = (req.query.entityType as string | undefined) ?? null;
     const entityId = (req.query.entityId as string | undefined) ?? null;
+    const workOrderNumberRaw = (req.query.workOrderNumber as string | undefined) ?? null;
+    const from = (req.query.from as string | undefined) ?? null;
+    const to = (req.query.to as string | undefined) ?? null;
+    const workOrderNumber =
+      workOrderNumberRaw && /^\d+$/.test(workOrderNumberRaw)
+        ? Number.parseInt(workOrderNumberRaw, 10)
+        : null;
+    if (workOrderNumberRaw && workOrderNumber === null) {
+      res.status(400).json({ message: "workOrderNumber must be a number" });
+      return;
+    }
+
     const { rows } = await pool.query(
-      `SELECT id, entity_type, entity_id, original_file_name, mime_type, file_size, uploaded_by, created_at
-       FROM attachments
-       WHERE ($3::text IS NULL OR entity_type = $3)
-         AND ($4::text IS NULL OR entity_id = $4)
-       ORDER BY created_at DESC
+      `SELECT
+         a.id,
+         a.entity_type,
+         a.entity_id,
+         a.original_file_name,
+         a.mime_type,
+         a.file_size,
+         a.uploaded_by,
+         a.created_at,
+         wo.wo_number AS work_order_number
+       FROM attachments a
+       LEFT JOIN work_orders wo
+         ON a.entity_type = 'WORK_ORDER'
+        AND a.entity_id = wo.id
+       WHERE ($3::text IS NULL OR a.entity_type = $3)
+         AND ($4::text IS NULL OR a.entity_id = $4)
+         AND ($5::int IS NULL OR wo.wo_number = $5)
+         AND ($6::date IS NULL OR a.created_at::date >= $6::date)
+         AND ($7::date IS NULL OR a.created_at::date <= $7::date)
+       ORDER BY a.created_at DESC
        LIMIT $1 OFFSET $2`,
-      [limit, offset, entityType, entityId]
+      [limit, offset, entityType, entityId, workOrderNumber, from, to]
     );
     res.json(rows);
   } catch (error) {

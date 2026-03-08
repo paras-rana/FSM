@@ -6,33 +6,44 @@
 
 :root {
   font-family: "Poppins", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-  --fsm-bg: 248 251 255;
+  --fsm-bg: 245 247 250;
   --fsm-panel: 255 255 255;
-  --fsm-ink: 15 23 42;
-  --fsm-ink-muted: 71 85 105;
+  --fsm-ink: 30 41 59;
+  --fsm-ink-muted: 100 116 139;
   --fsm-border: 203 213 225;
-  --fsm-accent: 66 133 244;
-  --fsm-accent-dark: 26 115 232;
-  --fsm-blue-soft: 239 246 255;
-  --fsm-blue-soft-hover: 219 234 254;
-  --fsm-blue-soft-2: 231 240 255;
-  --fsm-blue-soft-3: 219 234 254;
-  --fsm-red-soft: 254 226 226;
-  --fsm-red-soft-hover: 254 202 202;
-  --fsm-red-accent: 239 68 68;
+  --fsm-accent: 37 99 235;
+  --fsm-accent-dark: 29 78 216;
+  --fsm-blue-soft: 241 245 249;
+  --fsm-blue-soft-hover: 226 232 240;
+  --fsm-blue-soft-2: 248 250 252;
+  --fsm-blue-soft-3: 239 246 255;
+  --fsm-red-soft: 254 242 242;
+  --fsm-red-soft-hover: 254 226 226;
+  --fsm-red-accent: 220 38 38;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
-  background:
-    radial-gradient(1000px 760px at 92% -22%, rgb(var(--fsm-accent) / 0.18), transparent 64%),
-    radial-gradient(900px 650px at -12% 118%, rgb(var(--fsm-accent-dark) / 0.14), transparent 60%),
-    radial-gradient(700px 460px at 78% 84%, rgb(var(--fsm-red-accent) / 0.08), transparent 62%),
-    linear-gradient(180deg, rgb(var(--fsm-bg)) 0%, rgb(var(--fsm-blue-soft)) 52%, rgb(var(--fsm-bg)) 100%);
+  background: #ffffff;
   color: rgb(var(--fsm-ink));
 }
 
 #root {
   min-height: 100vh;
+}
+
+button {
+  background-color: #e0f2fe !important;
+  color: #0369a1 !important;
+  border-color: #bae6fd !important;
+}
+
+button:hover {
+  background-color: #bae6fd !important;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }

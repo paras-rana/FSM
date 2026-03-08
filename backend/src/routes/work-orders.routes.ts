@@ -50,6 +50,8 @@ workOrdersRouter.get("/", async (req, res, next) => {
     const leadTechnicianId = (req.query.leadTechnicianId as string | undefined) ?? null;
     const updatedFrom = (req.query.updatedFrom as string | undefined) ?? null;
     const updatedTo = (req.query.updatedTo as string | undefined) ?? null;
+    const facilityNameRaw = (req.query.facilityName as string | undefined) ?? null;
+    const facilityName = facilityNameRaw?.trim() ? facilityNameRaw.trim() : null;
     const assignedOnlyRaw = (req.query.assignedOnly as string | undefined) ?? null;
     const assignedOnly =
       assignedOnlyRaw === null ? null : assignedOnlyRaw === "true" || assignedOnlyRaw === "1";
@@ -67,6 +69,7 @@ workOrdersRouter.get("/", async (req, res, next) => {
          AND ($6::timestamptz IS NULL OR COALESCE(wo.updated_at, wo.created_at) >= $6::timestamptz)
          AND ($7::timestamptz IS NULL OR COALESCE(wo.updated_at, wo.created_at) < $7::timestamptz)
          AND ($8::boolean IS NULL OR $8 = false OR wo.lead_technician_id IS NOT NULL)
+         AND ($9::text IS NULL OR wo.facility_name = $9)
        ORDER BY wo.created_at DESC
        LIMIT $1 OFFSET $2`,
       [
@@ -77,7 +80,8 @@ workOrdersRouter.get("/", async (req, res, next) => {
         leadTechnicianId,
         updatedFrom,
         updatedTo,
-        assignedOnly
+        assignedOnly,
+        facilityName
       ]
     );
     res.json(rows);

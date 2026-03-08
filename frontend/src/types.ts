@@ -15,6 +15,7 @@ export type PageAccessKey =
 export type AuthUser = {
   id: string;
   email: string;
+  fullName?: string;
   roles: RoleName[];
   pageAccess?: PageAccessKey[];
 };
@@ -118,6 +119,7 @@ export type AttachmentItem = {
   id: string;
   entity_type: string;
   entity_id: string;
+  work_order_number?: number | null;
   original_file_name: string;
   mime_type: string;
   file_size: number;
@@ -162,6 +164,14 @@ export type DashboardOpenByTechnician = {
   open_count: number;
 };
 
+export type DashboardLongestOpenWorkOrder = {
+  id: string;
+  wo_number: number;
+  technician_name?: string | null;
+  opened_at: string;
+  duration_open_hours: number;
+};
+
 export type DashboardSummary = {
   workOrdersByStatus: WorkOrderStatusCount[];
   newServiceRequests: {
@@ -170,4 +180,5 @@ export type DashboardSummary = {
   };
   closedByWeek: DashboardClosedByWeek[];
   openAssignedByTechnician: DashboardOpenByTechnician[];
+  longestOpenWorkOrders: DashboardLongestOpenWorkOrder[];
 };

@@ -13,11 +13,66 @@ import {
 } from "../modules/theme/theme";
 
 const makeTemplateId = () => `tpl_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+type ThemePreset = { id: string; name: string; colors: ThemeColors };
 
 export const ThemeTemplatesPage = () => {
+  const presetThemes = useMemo<ThemePreset[]>(
+    () => [
+      {
+        id: "clean-white-default",
+        name: "Clean White Default",
+        colors: getDefaultThemeColors()
+      },
+      {
+        id: "skyline-light",
+        name: "Skyline Light",
+        colors: {
+          ...getDefaultThemeColors(),
+          bg: "#f4f8ff",
+          panel: "#ffffff",
+          ink: "#172554",
+          inkMuted: "#475569",
+          border: "#bfdbfe",
+          accent: "#2563eb",
+          accentDark: "#1d4ed8",
+          blueSoft: "#eff6ff",
+          blueSoftHover: "#dbeafe",
+          blueSoft2: "#f8fbff",
+          blueSoft3: "#eaf2ff",
+          redSoft: "#fef2f2",
+          redSoftHover: "#fee2e2",
+          redAccent: "#dc2626"
+        }
+      },
+      {
+        id: "slate-breeze",
+        name: "Slate Breeze",
+        colors: {
+          ...getDefaultThemeColors(),
+          bg: "#f8fafc",
+          panel: "#ffffff",
+          ink: "#0f172a",
+          inkMuted: "#64748b",
+          border: "#cbd5e1",
+          accent: "#0ea5e9",
+          accentDark: "#0284c7",
+          blueSoft: "#f1f5f9",
+          blueSoftHover: "#e2e8f0",
+          blueSoft2: "#f8fafc",
+          blueSoft3: "#f0f9ff",
+          redSoft: "#fff1f2",
+          redSoftHover: "#ffe4e6",
+          redAccent: "#e11d48"
+        }
+      }
+    ],
+    []
+  );
+
   const [colors, setColors] = useState<ThemeColors>(getDefaultThemeColors());
   const [templates, setTemplates] = useState<ThemeTemplate[]>([]);
   const [templateName, setTemplateName] = useState("");
+  const [selectedPresetId, setSelectedPresetId] = useState(presetThemes[0]?.id ?? "");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -86,6 +141,18 @@ export const ThemeTemplatesPage = () => {
     saveTemplates(updated);
   };
 
+  const applyPreset = () => {
+    const preset = presetThemes.find((item) => item.id === selectedPresetId);
+    if (!preset) {
+      setError("Preset not found.");
+      return;
+    }
+    setColors(preset.colors);
+    applyThemeColors(preset.colors);
+    saveActiveTheme(preset.colors);
+    setError(null);
+  };
+
   return (
     <AppShell title="Theme Templates">
       <section className="p-6">
@@ -94,6 +161,32 @@ export const ThemeTemplatesPage = () => {
           Pick colors, apply instantly, and save reusable templates.
         </p>
         {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
+        <div className="rounded-xl border border-fsm-border bg-fsm-panel p-4 mb-4">
+          <h3 className="font-semibold mb-3">Preset Themes</h3>
+          <div className="grid md:grid-cols-[1fr_auto] gap-3 items-end">
+            <label className="grid gap-1">
+              <span className="text-sm text-fsm-ink-muted">Select Preset</span>
+              <select
+                className="rounded border border-fsm-border px-3 py-2"
+                value={selectedPresetId}
+                onChange={(event) => setSelectedPresetId(event.target.value)}
+              >
+                {presetThemes.map((preset) => (
+                  <option key={preset.id} value={preset.id}>
+                    {preset.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={applyPreset}
+              className="rounded bg-fsm-accent text-white px-3 py-2 text-sm hover:bg-fsm-accentDark"
+            >
+              Apply Preset
+            </button>
+          </div>
+        </div>
         <div className="grid lg:grid-cols-2 gap-4">
           <div className="rounded-xl border border-fsm-border bg-fsm-panel p-4">
             <h3 className="font-semibold mb-3">Colors</h3>

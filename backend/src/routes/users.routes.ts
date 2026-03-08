@@ -3,26 +3,34 @@ import { z } from "zod";
 import { pool } from "../db/pool";
 import { authorize } from "../middleware/authorize";
 import { createCuidLikeId } from "../utils/id";
-import { ALL_PAGE_ACCESS_KEYS, isPageAccessKey, resolveEffectivePageAccess } from "../utils/page-access";
+import {
+  ALL_PAGE_ACCESS_KEYS,
+  isPageAccessKey,
+  loadPersonaAccessMapFromDb,
+  PERSONA_PAGE_ACCESS,
+  resolvePageAccessFromRoleAccessMap
+} from "../utils/page-access";
 import { hashPassword } from "../utils/password";
+import type { RoleName } from "../utils/roles";
+
+const roleNameSchema = z.enum(["TECHNICIAN", "MANAGER", "ACCOUNTANT", "ADMIN"]);
 
 const createUserSchema = z.object({
   email: z.string().email(),
   fullName: z.string().min(1),
-  password: z.string().min(8)
+  password: z.string().min(8),
+  persona: roleNameSchema
 });
 
 const setRolesSchema = z.object({
-  roles: z.array(z.string().min(1)).min(1)
+  roles: z.array(roleNameSchema).min(1).max(1)
 });
 
 const resetPasswordSchema = z.object({
   newPassword: z.string().min(8)
 });
 
-const setPageAccessSchema = z.object({
-  pages: z.array(z.string())
-});
+const setPersonaAccessSchema = z.record(z.string(), z.array(z.string()));
 
 export const usersRouter = Router();
 
@@ -39,6 +47,69 @@ usersRouter.get("/roles", async (_req, res, next) => {
 
 usersRouter.get("/pages", async (_req, res) => {
   res.json(ALL_PAGE_ACCESS_KEYS);
+});
+
+usersRouter.get("/persona-access", async (_req, res, next) => {
+  try {
+    const map = await loadPersonaAccessMapFromDb();
+    res.json(map);
+  } catch (error) {
+    next(error);
+  }
+});
+
+usersRouter.post("/persona-access", async (req, res, next) => {
+  const client = await pool.connect();
+  let startedTransaction = false;
+  try {
+    const parsed = setPersonaAccessSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ message: "Invalid payload" });
+      return;
+    }
+
+    const nextMap: Record<RoleName, string[]> = {
+      ADMIN: parsed.data.ADMIN ?? [],
+      MANAGER: parsed.data.MANAGER ?? [],
+      TECHNICIAN: parsed.data.TECHNICIAN ?? [],
+      ACCOUNTANT: parsed.data.ACCOUNTANT ?? []
+    };
+
+    for (const role of Object.keys(nextMap) as RoleName[]) {
+      const uniquePages = Array.from(new Set(nextMap[role]));
+      if (!uniquePages.every(isPageAccessKey)) {
+        res.status(400).json({ message: `Invalid page key for ${role}` });
+        return;
+      }
+      nextMap[role] = uniquePages;
+    }
+
+    await client.query("BEGIN");
+    startedTransaction = true;
+    await client.query(`DELETE FROM role_page_access`);
+
+    for (const role of Object.keys(nextMap) as RoleName[]) {
+      for (const page of nextMap[role]) {
+        await client.query(
+          `INSERT INTO role_page_access (role_id, page_key)
+           SELECT id, $2
+           FROM roles
+           WHERE name = $1`,
+          [role, page]
+        );
+      }
+    }
+
+    await client.query("COMMIT");
+    res.json({ message: "Persona access updated" });
+  } catch (error) {
+    if (startedTransaction) {
+      await client.query("ROLLBACK");
+    }
+    next(error);
+  } finally {
+    client.release();
+  }
 });
 
 usersRouter.get("/", async (_req, res, next) => {
@@ -83,13 +154,16 @@ usersRouter.get("/:id", async (req, res, next) => {
 usersRouter.get("/:id/page-access", async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT page_key
-       FROM user_page_access
-       WHERE user_id = $1
-       ORDER BY page_key ASC`,
+      `SELECT r.name
+       FROM user_roles ur
+       JOIN roles r ON r.id = ur.role_id
+       WHERE ur.user_id = $1
+       ORDER BY r.name ASC`,
       [req.params.id]
     );
-    const pageAccess = resolveEffectivePageAccess(rows.map((row) => row.page_key as string));
+    const roles = rows.map((row) => row.name as RoleName);
+    const map = await loadPersonaAccessMapFromDb();
+    const pageAccess = resolvePageAccessFromRoleAccessMap(roles, map);
     res.json({ userId: req.params.id, pages: pageAccess });
   } catch (error) {
     next(error);
@@ -97,6 +171,8 @@ usersRouter.get("/:id/page-access", async (req, res, next) => {
 });
 
 usersRouter.post("/", async (req, res, next) => {
+  const client = await pool.connect();
+  let startedTransaction = false;
   try {
     const parsed = createUserSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -106,15 +182,30 @@ usersRouter.post("/", async (req, res, next) => {
 
     const id = createCuidLikeId();
     const hashed = await hashPassword(parsed.data.password);
-    const { rows } = await pool.query(
+    await client.query("BEGIN");
+    startedTransaction = true;
+    const { rows } = await client.query(
       `INSERT INTO users (id, email, full_name, password_hash)
        VALUES ($1, $2, $3, $4)
        RETURNING id, email, full_name, created_at`,
       [id, parsed.data.email, parsed.data.fullName, hashed]
     );
+    const roleRow = await client.query(`SELECT id FROM roles WHERE name = $1`, [parsed.data.persona]);
+    if (roleRow.rows.length !== 1) {
+      await client.query("ROLLBACK");
+      res.status(400).json({ message: "Invalid persona" });
+      return;
+    }
+    await client.query(`INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)`, [id, roleRow.rows[0].id]);
+    await client.query("COMMIT");
     res.status(201).json(rows[0]);
   } catch (error) {
+    if (startedTransaction) {
+      await client.query("ROLLBACK");
+    }
     next(error);
+  } finally {
+    client.release();
   }
 });
 
@@ -174,29 +265,8 @@ usersRouter.patch("/:id/password", async (req, res, next) => {
   }
 });
 
-usersRouter.post("/:id/page-access", async (req, res, next) => {
-  try {
-    const parsed = setPageAccessSchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ message: "Invalid payload" });
-      return;
-    }
-
-    const pages = Array.from(new Set(parsed.data.pages));
-    if (!pages.every(isPageAccessKey)) {
-      res.status(400).json({ message: "One or more pages are invalid" });
-      return;
-    }
-
-    const userId = req.params.id;
-    await pool.query(`DELETE FROM user_page_access WHERE user_id = $1`, [userId]);
-
-    for (const page of pages) {
-      await pool.query(`INSERT INTO user_page_access (user_id, page_key) VALUES ($1, $2)`, [userId, page]);
-    }
-
-    res.json({ message: "Page access updated", pages });
-  } catch (error) {
-    next(error);
-  }
+usersRouter.post("/:id/page-access", async (_req, res) => {
+  res.status(400).json({
+    message: "Page access is persona-based. Update user role/persona instead."
+  });
 });

@@ -15,8 +15,9 @@ export const ALL_PAGE_ACCESS_KEYS: PageAccessKey[] = [
 ];
 
 export const hasPageAccess = (user: AuthUser | null | undefined, page: PageAccessKey): boolean => {
+  if (!user) return false;
   const access = user?.pageAccess;
-  if (!access || access.length === 0) return true;
+  if (!access || access.length === 0) return false;
   return access.includes(page);
 };
 

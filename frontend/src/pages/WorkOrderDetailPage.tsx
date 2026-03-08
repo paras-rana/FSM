@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { AppShell } from "../components/AppShell";
+import { PlusIcon } from "../components/Icons";
 import { api } from "../modules/api/client";
 import { useAuth } from "../modules/auth/AuthContext";
 import { hasAnyRole } from "../modules/auth/roles";
@@ -13,22 +14,39 @@ import type {
   WorkOrder
 } from "../types";
 
+const statuses = [
+  "CREATED",
+  "ASSIGNED",
+  "IN_PROGRESS",
+  "WAITING_FOR_PARTS",
+  "COMPLETED",
+  "REOPENED",
+  "ARCHIVED"
+] as const;
+
 const currency = (value: number): string =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(value || 0));
+const formatSize = (bytes: number): string => {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
 const today = new Date().toISOString().slice(0, 10);
-const dateTime = (value?: string): string => (value ? new Date(value).toLocaleString() : "-");
-const escapeHtml = (value: string): string =>
-  value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 
 type TechnicianOption = {
   id: string;
   full_name: string;
   email: string;
+};
+
+type OverlayType = "material" | "labor" | "vendor" | "attachment" | "status" | null;
+type ActivityRow = {
+  id: string;
+  type: "Material Cost" | "Vendor Cost" | "Labor" | "Attachment";
+  details: string;
+  amountOrHours: string;
+  createdAt: string;
+  onAction?: () => void;
 };
 
 export const WorkOrderDetailPage = () => {
@@ -43,12 +61,10 @@ export const WorkOrderDetailPage = () => {
   const [technicians, setTechnicians] = useState<TechnicianOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [statusSaving, setStatusSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [sectionsOpen, setSectionsOpen] = useState({
-    costs: false,
-    labor: false,
-    attachments: false
-  });
+  const [activeOverlay, setActiveOverlay] = useState<OverlayType>(null);
+  const [nextStatus, setNextStatus] = useState("");
   const [materialForm, setMaterialForm] = useState({
     description: "",
     quantity: "1",
@@ -91,21 +107,16 @@ export const WorkOrderDetailPage = () => {
     }
     return map;
   }, [technicians]);
+
   const resolveTechnicianLabel = (technicianId?: string | null, technicianName?: string | null) => {
     if (technicianName) return technicianName;
     if (technicianId && technicianNameById.has(technicianId)) return technicianNameById.get(technicianId)!;
     return "Unknown Technician";
   };
-  const serviceRequestLabel = workOrder?.service_request_number
-    ? `SR-${workOrder.service_request_number}`
-    : "-";
   const leadTechnicianLabel = resolveTechnicianLabel(
     workOrder?.lead_technician_id,
     workOrder?.lead_technician_name
   );
-  const toggleSection = (section: "costs" | "labor" | "attachments") => {
-    setSectionsOpen((prev) => ({ ...prev, [section]: !prev[section] }));
-  };
 
   const loadDetails = async (workOrderId: string, showLoading = true) => {
     if (showLoading) setLoading(true);
@@ -117,11 +128,10 @@ export const WorkOrderDetailPage = () => {
         api.get<MaterialItem[]>(`/costs/materials?workOrderId=${workOrderId}`),
         api.get<VendorInvoiceItem[]>(`/costs/vendor-invoices?workOrderId=${workOrderId}`),
         api.get<LaborEntry[]>(`/labor-entries?workOrderId=${workOrderId}&limit=200`),
-        api.get<AttachmentItem[]>(
-          `/uploads?entityType=WORK_ORDER&entityId=${workOrderId}&limit=200`
-        )
+        api.get<AttachmentItem[]>(`/uploads?entityType=WORK_ORDER&entityId=${workOrderId}&limit=200`)
       ]);
       setWorkOrder(woRes.data);
+      setNextStatus("");
       setTotals(totalsRes.data);
       setMaterials(materialsRes.data);
       setVendorInvoices(vendorInvoicesRes.data);
@@ -132,183 +142,6 @@ export const WorkOrderDetailPage = () => {
     } finally {
       if (showLoading) setLoading(false);
     }
-  };
-
-  const generatePdfReport = () => {
-    if (!workOrder || !totals) return;
-    setError(null);
-
-    const reportGeneratedAt = new Date().toLocaleString();
-    const materialRows = materials
-      .map(
-        (item) => `
-          <tr>
-            <td>${escapeHtml(item.description)}</td>
-            <td>${Number(item.quantity).toFixed(3)}</td>
-            <td>${currency(Number(item.unit_cost))}</td>
-            <td>${(Number(item.sales_tax_rate) * 100).toFixed(2)}%</td>
-            <td>${currency(Number(item.subtotal))}</td>
-            <td>${currency(Number(item.tax))}</td>
-            <td>${currency(Number(item.total))}</td>
-            <td>${dateTime(item.created_at)}</td>
-          </tr>`
-      )
-      .join("");
-    const vendorRows = vendorInvoices
-      .map(
-        (item) => `
-          <tr>
-            <td>${escapeHtml(item.vendor_name)}</td>
-            <td>${escapeHtml(item.invoice_number)}</td>
-            <td>${currency(Number(item.amount))}</td>
-            <td>${(Number(item.sales_tax_rate) * 100).toFixed(2)}%</td>
-            <td>${currency(Number(item.subtotal))}</td>
-            <td>${currency(Number(item.tax))}</td>
-            <td>${currency(Number(item.total))}</td>
-            <td>${dateTime(item.created_at)}</td>
-          </tr>`
-      )
-      .join("");
-    const laborRows = labor
-      .map(
-        (entry) => `
-          <tr>
-            <td>${escapeHtml(entry.entry_date)}</td>
-            <td>${Number(entry.hours).toFixed(2)}</td>
-            <td>${escapeHtml(entry.entry_type)}</td>
-            <td>${escapeHtml(resolveTechnicianLabel(entry.technician_id, entry.technician_name))}</td>
-            <td>${dateTime(entry.created_at)}</td>
-          </tr>`
-      )
-      .join("");
-
-    const reportHtml = `<!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8" />
-        <title>Work Order ${escapeHtml(String(workOrder.wo_number))} Report</title>
-        <style>
-          body { font-family: Arial, sans-serif; color: #111827; margin: 24px; }
-          h1, h2 { margin: 0 0 10px; }
-          h2 { margin-top: 28px; }
-          .meta { margin-bottom: 14px; line-height: 1.5; }
-          .summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
-          .card { border: 1px solid #d1d5db; border-radius: 8px; padding: 10px; }
-          table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-          th, td { border: 1px solid #d1d5db; padding: 7px; font-size: 12px; text-align: left; vertical-align: top; }
-          th { background: #f3f4f6; }
-          .small { color: #4b5563; font-size: 12px; }
-          @media print {
-            body { margin: 12mm; }
-            h2 { page-break-after: avoid; }
-            table, tr, td, th { page-break-inside: avoid; }
-          }
-        </style>
-      </head>
-      <body>
-        <h1>Work Order Report</h1>
-        <p class="small">Generated: ${escapeHtml(reportGeneratedAt)}</p>
-        <div class="meta">
-          <div><strong>WO Number:</strong> ${escapeHtml(String(workOrder.wo_number))}</div>
-          <div><strong>Title:</strong> ${escapeHtml(workOrder.title)}</div>
-          <div><strong>Status:</strong> ${escapeHtml(workOrder.status)}</div>
-          <div><strong>Facility:</strong> ${escapeHtml(workOrder.facility_name)}</div>
-          <div><strong>Zone / Room:</strong> ${escapeHtml(workOrder.zone_name ?? "-")}</div>
-          <div><strong>Lead Technician:</strong> ${escapeHtml(leadTechnicianLabel)}</div>
-          <div><strong>Service Request:</strong> ${escapeHtml(serviceRequestLabel)}</div>
-          <div><strong>Created:</strong> ${escapeHtml(dateTime(workOrder.created_at))}</div>
-          <div><strong>Updated:</strong> ${escapeHtml(dateTime(workOrder.updated_at))}</div>
-        </div>
-
-        <h2>Description</h2>
-        <p>${escapeHtml(workOrder.description || "-")}</p>
-
-        <h2>Totals</h2>
-        <div class="summary">
-          <div class="card"><strong>Material Total</strong><br/>${escapeHtml(currency(totals.material.total))}</div>
-          <div class="card"><strong>Vendor Total</strong><br/>${escapeHtml(currency(totals.vendor.total))}</div>
-          <div class="card"><strong>Combined Total</strong><br/>${escapeHtml(currency(totals.combined.total))}</div>
-        </div>
-        <div class="summary">
-          <div class="card"><strong>Labor Hours</strong><br/>${laborTotalHours.toFixed(2)} hrs</div>
-          <div class="card"><strong>Combined Subtotal</strong><br/>${escapeHtml(currency(totals.combined.subtotal))}</div>
-          <div class="card"><strong>Combined Tax</strong><br/>${escapeHtml(currency(totals.combined.tax))}</div>
-        </div>
-
-        <h2>Material Line Items</h2>
-        ${
-          materials.length === 0
-            ? "<p class='small'>No material entries.</p>"
-            : `<table>
-            <thead>
-              <tr>
-                <th>Description</th><th>Qty</th><th>Unit Cost</th><th>Tax Rate</th><th>Subtotal</th><th>Tax</th><th>Total</th><th>Created</th>
-              </tr>
-            </thead>
-            <tbody>${materialRows}</tbody>
-          </table>`
-        }
-
-        <h2>Vendor Invoice Line Items</h2>
-        ${
-          vendorInvoices.length === 0
-            ? "<p class='small'>No vendor invoice entries.</p>"
-            : `<table>
-            <thead>
-              <tr>
-                <th>Vendor</th><th>Invoice #</th><th>Amount</th><th>Tax Rate</th><th>Subtotal</th><th>Tax</th><th>Total</th><th>Created</th>
-              </tr>
-            </thead>
-            <tbody>${vendorRows}</tbody>
-          </table>`
-        }
-
-        <h2>Labor Entries</h2>
-        ${
-          labor.length === 0
-            ? "<p class='small'>No labor entries.</p>"
-            : `<table>
-            <thead>
-              <tr>
-                <th>Date</th><th>Hours</th><th>Type</th><th>Technician</th><th>Created</th>
-              </tr>
-            </thead>
-            <tbody>${laborRows}</tbody>
-          </table>`
-        }
-      </body>
-      </html>`;
-
-    const printFrame = document.createElement("iframe");
-    printFrame.style.position = "fixed";
-    printFrame.style.right = "0";
-    printFrame.style.bottom = "0";
-    printFrame.style.width = "0";
-    printFrame.style.height = "0";
-    printFrame.style.border = "0";
-    printFrame.setAttribute("aria-hidden", "true");
-    document.body.appendChild(printFrame);
-
-    const cleanup = () => {
-      printFrame.remove();
-    };
-    const frameWindow = printFrame.contentWindow;
-    if (!frameWindow) {
-      cleanup();
-      setError("Could not open print preview.");
-      return;
-    }
-
-    frameWindow.document.open();
-    frameWindow.document.write(reportHtml);
-    frameWindow.document.close();
-
-    frameWindow.addEventListener("afterprint", cleanup, { once: true });
-    setTimeout(cleanup, 60_000);
-    setTimeout(() => {
-      frameWindow.focus();
-      frameWindow.print();
-    }, 150);
   };
 
   useEffect(() => {
@@ -354,6 +187,7 @@ export const WorkOrderDetailPage = () => {
         salesTaxRate: Number(materialForm.salesTaxRate)
       });
       setMaterialForm({ description: "", quantity: "1", unitCost: "0", salesTaxRate: "0.1" });
+      setActiveOverlay(null);
       await loadDetails(id, false);
     } catch {
       setError("Failed to create material entry.");
@@ -376,6 +210,7 @@ export const WorkOrderDetailPage = () => {
         salesTaxRate: Number(vendorForm.salesTaxRate)
       });
       setVendorForm({ vendorName: "", invoiceNumber: "", amount: "0", salesTaxRate: "0.1" });
+      setActiveOverlay(null);
       await loadDetails(id, false);
     } catch {
       setError("Failed to create vendor invoice.");
@@ -398,6 +233,7 @@ export const WorkOrderDetailPage = () => {
         entryDate: laborForm.entryDate
       });
       setLaborForm((prev) => ({ ...prev, hours: "1", entryDate: today }));
+      setActiveOverlay(null);
       await loadDetails(id, false);
     } catch {
       setError("Could not create labor entry. Check date/hours constraints.");
@@ -420,6 +256,7 @@ export const WorkOrderDetailPage = () => {
         headers: { "Content-Type": "multipart/form-data" }
       });
       setFile(null);
+      setActiveOverlay(null);
       await loadDetails(id, false);
     } catch {
       setError("Upload failed. Check file type/size limits.");
@@ -447,429 +284,295 @@ export const WorkOrderDetailPage = () => {
     }
   };
 
+  const updateStatus = async () => {
+    if (!id || !isManagerOrAdmin || !nextStatus) return;
+    setStatusSaving(true);
+    setError(null);
+    try {
+      await api.post(`/work-orders/${id}/status`, { status: nextStatus });
+      setNextStatus("");
+      setActiveOverlay(null);
+      await loadDetails(id, false);
+    } catch (err: unknown) {
+      const message =
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ??
+        "Status update failed.";
+      setError(message);
+    } finally {
+      setStatusSaving(false);
+    }
+  };
+
+  const activityRows = useMemo<ActivityRow[]>(() => {
+    const materialRows: ActivityRow[] = materials.map((item) => ({
+      id: `m-${item.id}`,
+      type: "Material Cost",
+      details: item.description,
+      amountOrHours: currency(item.total),
+      createdAt: item.created_at
+    }));
+    const vendorRows: ActivityRow[] = vendorInvoices.map((item) => ({
+      id: `v-${item.id}`,
+      type: "Vendor Cost",
+      details: `${item.vendor_name} | Invoice ${item.invoice_number}`,
+      amountOrHours: currency(item.total),
+      createdAt: item.created_at
+    }));
+    const laborRows: ActivityRow[] = labor.map((item) => ({
+      id: `l-${item.id}`,
+      type: "Labor",
+      details: `${resolveTechnicianLabel(item.technician_id, item.technician_name)} | ${item.entry_type}`,
+      amountOrHours: `${Number(item.hours).toFixed(2)} hrs`,
+      createdAt: item.created_at
+    }));
+    const attachmentRows: ActivityRow[] = attachments.map((item) => ({
+      id: `a-${item.id}`,
+      type: "Attachment",
+      details: `${item.original_file_name} (${item.mime_type}, ${formatSize(item.file_size)})`,
+      amountOrHours: "-",
+      createdAt: item.created_at,
+      onAction: () => void downloadAttachment(item)
+    }));
+    return [...materialRows, ...vendorRows, ...laborRows, ...attachmentRows].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  }, [attachments, labor, materials, vendorInvoices]);
+
+  const generatePdfReport = () => {
+    window.print();
+  };
+
   return (
     <AppShell title="Work Order Detail">
       <section className="rounded-2xl bg-fsm-panel shadow p-6">
-        <div>
-          <Link to="/work-orders" className="text-sm underline">
-            Back to Work Orders
-          </Link>
+        <div className="flex items-start justify-between gap-4">
           <h2 className="text-xl font-semibold mt-2">
             {workOrder ? `WO-${workOrder.wo_number} | ${workOrder.title}` : "Loading..."}
           </h2>
+          {!loading && workOrder && (
+            <div className="text-right">
+              <p className="text-xs text-slate-600 uppercase tracking-wide">Status</p>
+              <div className="mt-1 flex items-center justify-end gap-2">
+                <p className="text-lg font-bold tracking-wide">{workOrder.status}</p>
+                {isManagerOrAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveOverlay("status")}
+                    className="inline-flex items-center gap-1 rounded bg-sky-100 text-sky-700 px-3 py-2 text-sm hover:bg-sky-200 disabled:opacity-50"
+                  >
+                    <PlusIcon size={14} />
+                    <span>Update Status</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
         {error && <p className="text-sm text-red-600 mt-3">{error}</p>}
         {loading && <p className="text-slate-600 mt-3">Loading details...</p>}
       </section>
 
-      {!loading && !error && workOrder && totals && (
+      {!loading && workOrder && totals && (
         <>
           <section className="rounded-2xl bg-fsm-panel shadow p-6">
-            <h2 className="text-xl font-semibold mb-3">Overview</h2>
-            <div className="grid md:grid-cols-2 gap-4 text-sm">
-              <div className="rounded border p-3">
-                <p>
-                  <strong>WO Number:</strong> {workOrder.wo_number}
-                </p>
-                <p>
-                  <strong>Status:</strong> {workOrder.status}
-                </p>
-                <p>
-                  <strong>Lead Technician:</strong> {leadTechnicianLabel}
-                </p>
-                <p>
-                  <strong>Facility:</strong> {workOrder.facility_name}
-                </p>
-              </div>
-              <div className="rounded border p-3">
-                <p>
-                  <strong>Created:</strong> {new Date(workOrder.created_at).toLocaleString()}
-                </p>
-                <p>
-                  <strong>Updated:</strong>{" "}
-                  {workOrder.updated_at ? new Date(workOrder.updated_at).toLocaleString() : "-"}
-                </p>
-                <p>
-                  <strong>Service Request:</strong> {serviceRequestLabel}
-                </p>
-                <p>
-                  <strong>Zone / Room:</strong> {workOrder.zone_name ?? "-"}
-                </p>
-              </div>
-            </div>
-            <article className="mt-4 rounded border p-3">
+            <article className="mb-4 rounded border p-3">
               <p className="font-semibold mb-2">Description</p>
               <p className="text-sm">{workOrder.description}</p>
             </article>
-            <div className="mt-4 grid md:grid-cols-3 gap-4 text-sm">
-              <article className="rounded border p-3">
-                <p className="text-slate-600">Cost Total</p>
-                <p className="text-lg font-semibold">{currency(totals.combined.total)}</p>
-              </article>
-              <article className="rounded border p-3">
-                <p className="text-slate-600">Vendor Total</p>
-                <p className="text-lg font-semibold">{currency(totals.vendor.total)}</p>
-              </article>
-              <article className="rounded border p-3">
-                <p className="text-slate-600">Labor Total</p>
-                <p className="text-lg font-semibold">{laborTotalHours.toFixed(2)} hrs</p>
-              </article>
+            <div className="grid md:grid-cols-3 gap-4 text-sm">
+              <div className="rounded border border-fsm-border bg-white p-3">
+                <p><strong>Facility:</strong> {workOrder.facility_name}</p>
+                <p><strong>Zone / Room:</strong> {workOrder.zone_name ?? "-"}</p>
+              </div>
+              <div className="rounded border border-fsm-border bg-white p-3">
+                <p><strong>Tech Assigned:</strong> {leadTechnicianLabel}</p>
+              </div>
+              <div className="rounded border border-fsm-border bg-white p-3">
+                <p><strong>Created:</strong> {new Date(workOrder.created_at).toLocaleString()}</p>
+                <p><strong>Updated:</strong> {workOrder.updated_at ? new Date(workOrder.updated_at).toLocaleString() : "-"}</p>
+                <p>
+                  <strong>Service Request:</strong>{" "}
+                  {workOrder.service_request_id && workOrder.service_request_number ? (
+                    <Link to={`/service-requests/${workOrder.service_request_id}`} className="underline">
+                      SR-{workOrder.service_request_number}
+                    </Link>
+                  ) : (
+                    "-"
+                  )}
+                </p>
+              </div>
             </div>
           </section>
 
           <section className="rounded-2xl bg-fsm-panel shadow p-6">
-            <button
-              type="button"
-              className="w-full flex items-center justify-between text-left"
-              onClick={() => toggleSection("costs")}
-              aria-expanded={sectionsOpen.costs}
-            >
-              <h2 className="text-xl font-semibold">Costs</h2>
-              <span className="text-sm text-slate-600">{sectionsOpen.costs ? "Hide" : "Show"}</span>
-            </button>
-            {sectionsOpen.costs && (
-              <div className="mt-4">
-                {canManageCosts && (
-                  <div className="grid md:grid-cols-2 gap-6 mb-6">
-                    <article className="rounded border p-4">
-                      <h3 className="text-lg font-semibold">Add Material</h3>
-                      <form className="mt-3 space-y-2" onSubmit={createMaterial}>
-                        <label className="grid gap-1 text-sm">
-                          <span className="text-slate-600">Description</span>
-                          <input
-                            placeholder="Description"
-                            className="rounded border px-3 py-2 w-full"
-                            value={materialForm.description}
-                            onChange={(e) =>
-                              setMaterialForm((prev) => ({ ...prev, description: e.target.value }))
-                            }
-                            required
-                          />
-                        </label>
-                        <div className="grid grid-cols-3 gap-2">
-                          <label className="grid gap-1 text-sm">
-                            <span className="text-slate-600">Quantity</span>
-                            <input
-                              type="number"
-                              step="0.001"
-                              className="rounded border px-3 py-2"
-                              value={materialForm.quantity}
-                              onChange={(e) =>
-                                setMaterialForm((prev) => ({ ...prev, quantity: e.target.value }))
-                              }
-                              required
-                            />
-                          </label>
-                          <label className="grid gap-1 text-sm">
-                            <span className="text-slate-600">Unit Cost</span>
-                            <input
-                              type="number"
-                              step="0.01"
-                              className="rounded border px-3 py-2"
-                              value={materialForm.unitCost}
-                              onChange={(e) =>
-                                setMaterialForm((prev) => ({ ...prev, unitCost: e.target.value }))
-                              }
-                              required
-                            />
-                          </label>
-                          <label className="grid gap-1 text-sm">
-                            <span className="text-slate-600">Sales Tax Rate</span>
-                            <input
-                              type="number"
-                              step="0.0001"
-                              min="0"
-                              max="1"
-                              className="rounded border px-3 py-2"
-                              value={materialForm.salesTaxRate}
-                              onChange={(e) =>
-                                setMaterialForm((prev) => ({ ...prev, salesTaxRate: e.target.value }))
-                              }
-                              required
-                            />
-                          </label>
-                        </div>
-                        <button
-                          type="submit"
-                          disabled={saving}
-                          className="rounded bg-fsm-accent text-white px-3 py-2 text-sm hover:bg-fsm-accentDark disabled:opacity-50"
-                        >
-                          Save Material
-                        </button>
-                      </form>
-                    </article>
-
-                    <article className="rounded border p-4">
-                      <h3 className="text-lg font-semibold">Add Vendor Invoice</h3>
-                      <form className="mt-3 space-y-2" onSubmit={createVendor}>
-                        <label className="grid gap-1 text-sm">
-                          <span className="text-slate-600">Vendor Name</span>
-                          <input
-                            placeholder="Vendor Name"
-                            className="rounded border px-3 py-2 w-full"
-                            value={vendorForm.vendorName}
-                            onChange={(e) =>
-                              setVendorForm((prev) => ({ ...prev, vendorName: e.target.value }))
-                            }
-                            required
-                          />
-                        </label>
-                        <label className="grid gap-1 text-sm">
-                          <span className="text-slate-600">Invoice Number</span>
-                          <input
-                            placeholder="Invoice Number"
-                            className="rounded border px-3 py-2 w-full"
-                            value={vendorForm.invoiceNumber}
-                            onChange={(e) =>
-                              setVendorForm((prev) => ({ ...prev, invoiceNumber: e.target.value }))
-                            }
-                            required
-                          />
-                        </label>
-                        <div className="grid grid-cols-2 gap-2">
-                          <label className="grid gap-1 text-sm">
-                            <span className="text-slate-600">Amount</span>
-                            <input
-                              type="number"
-                              step="0.01"
-                              className="rounded border px-3 py-2"
-                              value={vendorForm.amount}
-                              onChange={(e) =>
-                                setVendorForm((prev) => ({ ...prev, amount: e.target.value }))
-                              }
-                              required
-                            />
-                          </label>
-                          <label className="grid gap-1 text-sm">
-                            <span className="text-slate-600">Sales Tax Rate</span>
-                            <input
-                              type="number"
-                              step="0.0001"
-                              min="0"
-                              max="1"
-                              className="rounded border px-3 py-2"
-                              value={vendorForm.salesTaxRate}
-                              onChange={(e) =>
-                                setVendorForm((prev) => ({ ...prev, salesTaxRate: e.target.value }))
-                              }
-                              required
-                            />
-                          </label>
-                        </div>
-                        <button
-                          type="submit"
-                          disabled={saving}
-                          className="rounded bg-fsm-accent text-white px-3 py-2 text-sm hover:bg-fsm-accentDark disabled:opacity-50"
-                        >
-                          Save Vendor Invoice
-                        </button>
-                      </form>
-                    </article>
-                  </div>
-                )}
-                <div className="grid md:grid-cols-3 gap-4 text-sm">
-                  <div className="rounded border p-3">
-                    <p className="font-semibold">Material</p>
-                    <p>Subtotal: {currency(totals.material.subtotal)}</p>
-                    <p>Tax: {currency(totals.material.tax)}</p>
-                    <p>Total: {currency(totals.material.total)}</p>
-                  </div>
-                  <div className="rounded border p-3">
-                    <p className="font-semibold">Vendor</p>
-                    <p>Subtotal: {currency(totals.vendor.subtotal)}</p>
-                    <p>Tax: {currency(totals.vendor.tax)}</p>
-                    <p>Total: {currency(totals.vendor.total)}</p>
-                  </div>
-                  <div className="rounded border p-3 bg-slate-50">
-                    <p className="font-semibold">Combined</p>
-                    <p>Subtotal: {currency(totals.combined.subtotal)}</p>
-                    <p>Tax: {currency(totals.combined.tax)}</p>
-                    <p>Total: {currency(totals.combined.total)}</p>
-                  </div>
-                </div>
-              </div>
-            )}
+            <div className="flex flex-wrap gap-3">
+              <button type="button" className="rounded bg-fsm-accent text-white px-4 py-2 text-sm hover:bg-fsm-accentDark disabled:opacity-50" onClick={() => setActiveOverlay("material")} disabled={!canManageCosts}>Add Material Cost</button>
+              <button type="button" className="rounded bg-fsm-accent text-white px-4 py-2 text-sm hover:bg-fsm-accentDark disabled:opacity-50" onClick={() => setActiveOverlay("labor")} disabled={!canCreateLaborOrAttachments}>Add Labor</button>
+              <button type="button" className="rounded bg-fsm-accent text-white px-4 py-2 text-sm hover:bg-fsm-accentDark disabled:opacity-50" onClick={() => setActiveOverlay("vendor")} disabled={!canManageCosts}>Add Vendor Invoice</button>
+              <button type="button" className="rounded bg-fsm-accent text-white px-4 py-2 text-sm hover:bg-fsm-accentDark disabled:opacity-50" onClick={() => setActiveOverlay("attachment")} disabled={!canCreateLaborOrAttachments}>Add Attachments</button>
+            </div>
           </section>
 
           <section className="rounded-2xl bg-fsm-panel shadow p-6">
-            <button
-              type="button"
-              className="w-full flex items-center justify-between text-left"
-              onClick={() => toggleSection("labor")}
-              aria-expanded={sectionsOpen.labor}
-            >
-              <h2 className="text-xl font-semibold">Labor</h2>
-              <span className="text-sm text-slate-600">{sectionsOpen.labor ? "Hide" : "Show"}</span>
-            </button>
-            {sectionsOpen.labor && (
-              <div className="mt-4">
-                {canCreateLaborOrAttachments && (
-                  <form className="grid md:grid-cols-4 gap-3 mb-6" onSubmit={createLaborEntry}>
-                    <input
-                      type="number"
-                      min="0.1"
-                      step="0.1"
-                      className="rounded border px-3 py-2"
-                      value={laborForm.hours}
-                      onChange={(e) => setLaborForm((prev) => ({ ...prev, hours: e.target.value }))}
-                      required
-                    />
-                    {isManagerOrAdmin && (
-                      <select
-                        className="rounded border px-3 py-2"
-                        value={laborForm.technicianId}
-                        onChange={(e) =>
-                          setLaborForm((prev) => ({ ...prev, technicianId: e.target.value }))
-                        }
-                        required
-                      >
-                        {technicians.map((technician) => (
-                          <option key={technician.id} value={technician.id}>
-                            {technician.full_name} ({technician.email})
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                    <input
-                      type="date"
-                      className="rounded border px-3 py-2"
-                      value={laborForm.entryDate}
-                      onChange={(e) => setLaborForm((prev) => ({ ...prev, entryDate: e.target.value }))}
-                      required
-                    />
-                    <button
-                      type="submit"
-                      disabled={saving}
-                      className="rounded bg-fsm-accent text-white px-3 py-2 text-sm hover:bg-fsm-accentDark disabled:opacity-50"
-                    >
-                      Add Entry
-                    </button>
-                  </form>
-                )}
-                {labor.length === 0 ? (
-                  <p className="text-slate-600">No labor entries linked to this work order.</p>
-                ) : (
-                  <div className="overflow-auto">
-                    <table className="min-w-full text-sm">
-                      <thead>
-                        <tr className="text-left border-b">
-                          <th className="py-2 pr-3">Date</th>
-                          <th className="py-2 pr-3">Hours</th>
-                          <th className="py-2 pr-3">Type</th>
-                          <th className="py-2 pr-3">Technician</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {labor.map((entry) => (
-                          <tr key={entry.id} className="border-b last:border-0">
-                            <td className="py-2 pr-3">{entry.entry_date}</td>
-                            <td className="py-2 pr-3">{Number(entry.hours).toFixed(2)}</td>
-                            <td className="py-2 pr-3">{entry.entry_type}</td>
-                            <td className="py-2 pr-3">
-                              {resolveTechnicianLabel(entry.technician_id, entry.technician_name)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
-          </section>
-
-          <section className="rounded-2xl bg-fsm-panel shadow p-6">
-            <button
-              type="button"
-              className="w-full flex items-center justify-between text-left"
-              onClick={() => toggleSection("attachments")}
-              aria-expanded={sectionsOpen.attachments}
-            >
-              <h2 className="text-xl font-semibold">Attachments</h2>
-              <span className="text-sm text-slate-600">{sectionsOpen.attachments ? "Hide" : "Show"}</span>
-            </button>
-            {sectionsOpen.attachments && (
-              <div className="mt-4">
-                {canCreateLaborOrAttachments && (
-                  <form className="grid md:grid-cols-4 gap-3 mb-6" onSubmit={uploadAttachment}>
-                    <input
-                      className="rounded border px-3 py-2 bg-slate-50"
-                      value="WORK_ORDER"
-                      readOnly
-                    />
-                    <input
-                      className="rounded border px-3 py-2 bg-slate-50"
-                      value={workOrder ? `WO-${workOrder.wo_number} | ${workOrder.title}` : ""}
-                      readOnly
-                    />
-                    <input
-                      type="file"
-                      className="rounded border px-3 py-2"
-                      onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                      required
-                    />
-                    <button
-                      type="submit"
-                      disabled={saving || !file}
-                      className="rounded bg-fsm-accent text-white px-3 py-2 text-sm hover:bg-fsm-accentDark disabled:opacity-50"
-                    >
-                      Upload
-                    </button>
-                  </form>
-                )}
-                {attachments.length === 0 ? (
-                  <p className="text-slate-600">No attachments linked to this work order.</p>
-                ) : (
-                  <div className="overflow-auto">
-                    <table className="min-w-full text-sm">
-                      <thead>
-                        <tr className="text-left border-b">
-                          <th className="py-2 pr-3">File Name</th>
-                          <th className="py-2 pr-3">Type</th>
-                          <th className="py-2 pr-3">Size</th>
-                          <th className="py-2 pr-3">Uploaded</th>
-                          <th className="py-2 pr-3">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {attachments.map((item) => (
-                          <tr key={item.id} className="border-b last:border-0">
-                            <td className="py-2 pr-3">{item.original_file_name}</td>
-                            <td className="py-2 pr-3">{item.mime_type}</td>
-                            <td className="py-2 pr-3">{item.file_size}</td>
-                            <td className="py-2 pr-3">{new Date(item.created_at).toLocaleString()}</td>
-                            <td className="py-2 pr-3">
-                              <button
-                                className="rounded border px-2 py-1 hover:bg-slate-50"
-                                onClick={() => void downloadAttachment(item)}
-                              >
-                                Download
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+            <h2 className="text-xl font-semibold mb-3">Material Costs, Vendor Costs, Labor & Attachments</h2>
+            {activityRows.length === 0 ? (
+              <p className="text-slate-600">No records yet.</p>
+            ) : (
+              <div className="overflow-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="text-left border-b">
+                      <th className="py-2 pr-3">Type</th>
+                      <th className="py-2 pr-3">Details</th>
+                      <th className="py-2 pr-3">Amount / Hours</th>
+                      <th className="py-2 pr-3">Created</th>
+                      <th className="py-2 pr-3">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activityRows.map((row) => (
+                      <tr key={row.id} className="border-b last:border-0">
+                        <td className="py-2 pr-3">{row.type}</td>
+                        <td className="py-2 pr-3">{row.details}</td>
+                        <td className="py-2 pr-3">{row.amountOrHours}</td>
+                        <td className="py-2 pr-3">{new Date(row.createdAt).toLocaleString()}</td>
+                        <td className="py-2 pr-3">
+                          {row.onAction ? (
+                            <button className="rounded bg-fsm-accent text-white px-3 py-1.5 text-sm hover:bg-fsm-accentDark" onClick={row.onAction}>
+                              Download
+                            </button>
+                          ) : (
+                            "-"
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </section>
 
           <section className="rounded-2xl bg-fsm-panel shadow p-6">
             <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={generatePdfReport}
-                className="rounded bg-fsm-accent text-white px-4 py-2 text-sm hover:bg-fsm-accentDark"
-              >
+              <button type="button" onClick={generatePdfReport} className="rounded bg-fsm-accent text-white px-4 py-2 text-sm hover:bg-fsm-accentDark">
                 Generate Work Order PDF
               </button>
             </div>
-            <p className="text-xs text-slate-600 mt-2 text-right">
-              Opens a print-ready report. Choose "Save as PDF" in the print dialog.
-            </p>
           </section>
+
+          <div
+            className={`fixed inset-0 z-50 transition-opacity duration-500 ${
+              activeOverlay ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
+            }`}
+          >
+            <div
+              className={`absolute inset-0 bg-black/30 transition-opacity duration-500 ${
+                activeOverlay ? "opacity-100" : "opacity-0"
+              }`}
+              onClick={() => setActiveOverlay(null)}
+            />
+            <aside
+              className={`fixed right-0 top-0 h-full w-full max-w-xl bg-white shadow-2xl p-6 overflow-auto transform transition-transform duration-500 ease-out ${
+                activeOverlay ? "translate-x-0" : "translate-x-full"
+              }`}
+            >
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold">
+                    {activeOverlay === "material" && "Add Material Cost"}
+                    {activeOverlay === "labor" && "Add Labor"}
+                    {activeOverlay === "vendor" && "Add Vendor Invoice"}
+                    {activeOverlay === "attachment" && "Add Attachments"}
+                    {activeOverlay === "status" && "Update Status"}
+                  </h3>
+                  <button className="rounded border px-3 py-1.5 text-sm" onClick={() => setActiveOverlay(null)}>Close</button>
+                </div>
+
+                {activeOverlay === "material" && (
+                  <form className="space-y-3" onSubmit={createMaterial}>
+                    <input className="rounded border px-3 py-2 w-full" placeholder="Description" value={materialForm.description} onChange={(e) => setMaterialForm((prev) => ({ ...prev, description: e.target.value }))} required />
+                    <div className="grid grid-cols-3 gap-2">
+                      <input type="number" step="0.001" className="rounded border px-3 py-2" placeholder="Quantity" value={materialForm.quantity} onChange={(e) => setMaterialForm((prev) => ({ ...prev, quantity: e.target.value }))} required />
+                      <input type="number" step="0.01" className="rounded border px-3 py-2" placeholder="Unit Cost" value={materialForm.unitCost} onChange={(e) => setMaterialForm((prev) => ({ ...prev, unitCost: e.target.value }))} required />
+                      <input type="number" step="0.0001" min="0" max="1" className="rounded border px-3 py-2" placeholder="Tax Rate" value={materialForm.salesTaxRate} onChange={(e) => setMaterialForm((prev) => ({ ...prev, salesTaxRate: e.target.value }))} required />
+                    </div>
+                    <button type="submit" disabled={saving} className="rounded bg-fsm-accent text-white px-4 py-2 text-sm hover:bg-fsm-accentDark disabled:opacity-50">{saving ? "Saving..." : "Save Material"}</button>
+                  </form>
+                )}
+
+                {activeOverlay === "labor" && (
+                  <form className="space-y-3" onSubmit={createLaborEntry}>
+                    <input type="number" min="0.1" step="0.1" className="rounded border px-3 py-2 w-full" placeholder="Hours" value={laborForm.hours} onChange={(e) => setLaborForm((prev) => ({ ...prev, hours: e.target.value }))} required />
+                    {isManagerOrAdmin && (
+                      <select className="rounded border px-3 py-2 w-full" value={laborForm.technicianId} onChange={(e) => setLaborForm((prev) => ({ ...prev, technicianId: e.target.value }))} required>
+                        {technicians.map((technician) => (
+                          <option key={technician.id} value={technician.id}>{technician.full_name} ({technician.email})</option>
+                        ))}
+                      </select>
+                    )}
+                    <input type="date" className="rounded border px-3 py-2 w-full" value={laborForm.entryDate} onChange={(e) => setLaborForm((prev) => ({ ...prev, entryDate: e.target.value }))} required />
+                    <button type="submit" disabled={saving} className="rounded bg-fsm-accent text-white px-4 py-2 text-sm hover:bg-fsm-accentDark disabled:opacity-50">{saving ? "Saving..." : "Save Labor"}</button>
+                  </form>
+                )}
+
+                {activeOverlay === "vendor" && (
+                  <form className="space-y-3" onSubmit={createVendor}>
+                    <input className="rounded border px-3 py-2 w-full" placeholder="Vendor Name" value={vendorForm.vendorName} onChange={(e) => setVendorForm((prev) => ({ ...prev, vendorName: e.target.value }))} required />
+                    <input className="rounded border px-3 py-2 w-full" placeholder="Invoice Number" value={vendorForm.invoiceNumber} onChange={(e) => setVendorForm((prev) => ({ ...prev, invoiceNumber: e.target.value }))} required />
+                    <div className="grid grid-cols-2 gap-2">
+                      <input type="number" step="0.01" className="rounded border px-3 py-2" placeholder="Amount" value={vendorForm.amount} onChange={(e) => setVendorForm((prev) => ({ ...prev, amount: e.target.value }))} required />
+                      <input type="number" step="0.0001" min="0" max="1" className="rounded border px-3 py-2" placeholder="Tax Rate" value={vendorForm.salesTaxRate} onChange={(e) => setVendorForm((prev) => ({ ...prev, salesTaxRate: e.target.value }))} required />
+                    </div>
+                    <button type="submit" disabled={saving} className="rounded bg-fsm-accent text-white px-4 py-2 text-sm hover:bg-fsm-accentDark disabled:opacity-50">{saving ? "Saving..." : "Save Vendor Invoice"}</button>
+                  </form>
+                )}
+
+                {activeOverlay === "attachment" && (
+                  <form className="space-y-3" onSubmit={uploadAttachment}>
+                    <input className="rounded border px-3 py-2 w-full bg-slate-50" value={workOrder ? `WO-${workOrder.wo_number} | ${workOrder.title}` : ""} readOnly />
+                    <input type="file" className="rounded border px-3 py-2 w-full" onChange={(e) => setFile(e.target.files?.[0] ?? null)} required />
+                    <button type="submit" disabled={saving || !file} className="rounded bg-fsm-accent text-white px-4 py-2 text-sm hover:bg-fsm-accentDark disabled:opacity-50">{saving ? "Uploading..." : "Upload Attachment"}</button>
+                  </form>
+                )}
+
+                {activeOverlay === "status" && (
+                  <form
+                    className="space-y-3"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void updateStatus();
+                    }}
+                  >
+                    <p className="text-sm text-slate-600">
+                      Current Status: <span className="font-semibold text-fsm-ink">{workOrder.status}</span>
+                    </p>
+                    <select
+                      className="rounded border px-3 py-2 w-full"
+                      value={nextStatus}
+                      onChange={(e) => setNextStatus(e.target.value)}
+                      disabled={statusSaving}
+                      required
+                    >
+                      <option value="">Select new status</option>
+                      {statuses
+                        .filter((status) => status !== workOrder.status)
+                        .map((status) => (
+                          <option key={status} value={status}>
+                            {status}
+                          </option>
+                        ))}
+                    </select>
+                    <button
+                      type="submit"
+                      disabled={!nextStatus || statusSaving}
+                      className="rounded bg-fsm-accent text-white px-4 py-2 text-sm hover:bg-fsm-accentDark disabled:opacity-50"
+                    >
+                      {statusSaving ? "Saving..." : "Save Status"}
+                    </button>
+                  </form>
+                )}
+            </aside>
+          </div>
         </>
       )}
     </AppShell>

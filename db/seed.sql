@@ -20,6 +20,42 @@ FROM roles
 WHERE name = 'ADMIN'
 ON CONFLICT DO NOTHING;
 
+INSERT INTO role_page_access (role_id, page_key)
+SELECT r.id, v.page_key
+FROM roles r
+JOIN (
+  VALUES
+    ('ADMIN', 'dashboard'),
+    ('ADMIN', 'work-orders'),
+    ('ADMIN', 'service-requests'),
+    ('ADMIN', 'timesheet'),
+    ('ADMIN', 'costs'),
+    ('ADMIN', 'reports'),
+    ('ADMIN', 'theme-templates'),
+    ('ADMIN', 'facilities'),
+    ('ADMIN', 'attachments'),
+    ('ADMIN', 'notifications'),
+    ('ADMIN', 'admin-users'),
+    ('MANAGER', 'dashboard'),
+    ('MANAGER', 'work-orders'),
+    ('MANAGER', 'service-requests'),
+    ('MANAGER', 'reports'),
+    ('MANAGER', 'attachments'),
+    ('MANAGER', 'notifications'),
+    ('TECHNICIAN', 'dashboard'),
+    ('TECHNICIAN', 'work-orders'),
+    ('TECHNICIAN', 'service-requests'),
+    ('TECHNICIAN', 'timesheet'),
+    ('TECHNICIAN', 'attachments'),
+    ('TECHNICIAN', 'notifications'),
+    ('ACCOUNTANT', 'dashboard'),
+    ('ACCOUNTANT', 'costs'),
+    ('ACCOUNTANT', 'reports'),
+    ('ACCOUNTANT', 'attachments'),
+    ('ACCOUNTANT', 'notifications')
+) AS v(role_name, page_key) ON v.role_name = r.name
+ON CONFLICT DO NOTHING;
+
 INSERT INTO facilities (id, name, address, city, zipcode, contact_info)
 VALUES (
   'cfac000000000000000000001',

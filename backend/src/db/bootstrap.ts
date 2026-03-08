@@ -1,4 +1,6 @@
 import { pool } from "./pool";
+import { PERSONA_PAGE_ACCESS, type PageAccessKey } from "../utils/page-access";
+import type { RoleName } from "../utils/roles";
 
 export const runBootstrapMigrations = async (): Promise<void> => {
   await pool.query(`
@@ -41,6 +43,37 @@ export const runBootstrapMigrations = async (): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_user_page_access_user_id
     ON user_page_access(user_id)
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS role_page_access (
+      role_id VARCHAR(25) NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+      page_key TEXT NOT NULL,
+      PRIMARY KEY (role_id, page_key)
+    )
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_role_page_access_role_id
+    ON role_page_access(role_id)
+  `);
+
+  const { rows } = await pool.query(`SELECT COUNT(*)::int AS count FROM role_page_access`);
+  const currentCount = rows[0]?.count ?? 0;
+  if (currentCount === 0) {
+    for (const role of Object.keys(PERSONA_PAGE_ACCESS) as RoleName[]) {
+      const pages = PERSONA_PAGE_ACCESS[role] as PageAccessKey[];
+      for (const page of pages) {
+        await pool.query(
+          `INSERT INTO role_page_access (role_id, page_key)
+           SELECT id, $2
+           FROM roles
+           WHERE name = $1
+           ON CONFLICT DO NOTHING`,
+          [role, page]
+        );
+      }
+    }
+  }
 
   await pool.query(`
     ALTER TABLE service_requests

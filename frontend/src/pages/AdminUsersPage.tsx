@@ -17,28 +17,27 @@ type RoleOption = {
   id: string;
   name: RoleName;
 };
-type PageAccessResponse = {
-  userId: string;
-  pages: PageAccessKey[];
-};
+type PersonaAccessMap = Record<RoleName, PageAccessKey[]>;
 
 export const AdminUsersPage = () => {
   const { user } = useAuth();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [roles, setRoles] = useState<RoleOption[]>([]);
   const [pages, setPages] = useState<PageAccessKey[]>([]);
-  const [selectedRoles, setSelectedRoles] = useState<Record<string, RoleName[]>>({});
+  const [personaAccess, setPersonaAccess] = useState<PersonaAccessMap | null>(null);
+  const [personaAccessDraft, setPersonaAccessDraft] = useState<PersonaAccessMap | null>(null);
+  const [editingPersonas, setEditingPersonas] = useState(false);
+  const [savingPersonaAccess, setSavingPersonaAccess] = useState(false);
+  const [selectedPersona, setSelectedPersona] = useState<Record<string, RoleName>>({});
   const [passwordDrafts, setPasswordDrafts] = useState<Record<string, string>>({});
-  const [selectedUserId, setSelectedUserId] = useState("");
-  const [selectedPages, setSelectedPages] = useState<PageAccessKey[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [savingPages, setSavingPages] = useState(false);
   const [newUser, setNewUser] = useState({
     email: "",
     fullName: "",
-    password: ""
+    password: "",
+    persona: "TECHNICIAN" as RoleName
   });
 
   const isAdmin = useMemo(() => hasAnyRole(user?.roles, ["ADMIN"]), [user?.roles]);
@@ -47,23 +46,24 @@ export const AdminUsersPage = () => {
     setLoading(true);
     setError(null);
     try {
-      const [usersRes, rolesRes] = await Promise.all([
+      const [usersRes, rolesRes, pagesRes, personaAccessRes] = await Promise.all([
         api.get<AdminUser[]>("/users"),
-        api.get<RoleOption[]>("/users/roles")
+        api.get<RoleOption[]>("/users/roles"),
+        api.get<PageAccessKey[]>("/users/pages"),
+        api.get<PersonaAccessMap>("/users/persona-access")
       ]);
       setUsers(usersRes.data);
       setRoles(rolesRes.data);
-      const pagesRes = await api.get<PageAccessKey[]>("/users/pages");
       setPages(pagesRes.data);
-      const draft: Record<string, RoleName[]> = {};
+      setPersonaAccess(personaAccessRes.data);
+      setPersonaAccessDraft(personaAccessRes.data);
+      const draft: Record<string, RoleName> = {};
       for (const u of usersRes.data) {
-        draft[u.id] = u.roles;
+        draft[u.id] = u.roles[0] ?? "TECHNICIAN";
       }
-      setSelectedRoles(draft);
-      const firstUserId = usersRes.data[0]?.id ?? "";
-      setSelectedUserId((prev) => prev || firstUserId);
+      setSelectedPersona(draft);
     } catch {
-      setError("Failed to load users/roles.");
+      setError("Failed to load users/personas.");
     } finally {
       setLoading(false);
     }
@@ -74,22 +74,6 @@ export const AdminUsersPage = () => {
     void load();
   }, [isAdmin]);
 
-  useEffect(() => {
-    if (!selectedUserId) {
-      setSelectedPages([]);
-      return;
-    }
-    const loadPageAccess = async () => {
-      try {
-        const response = await api.get<PageAccessResponse>(`/users/${selectedUserId}/page-access`);
-        setSelectedPages(response.data.pages);
-      } catch {
-        setError("Failed to load page access.");
-      }
-    };
-    void loadPageAccess();
-  }, [selectedUserId]);
-
   const createUser = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!isAdmin) return;
@@ -97,7 +81,7 @@ export const AdminUsersPage = () => {
     setError(null);
     try {
       await api.post("/users", newUser);
-      setNewUser({ email: "", fullName: "", password: "" });
+      setNewUser({ email: "", fullName: "", password: "", persona: "TECHNICIAN" });
       await load();
     } catch {
       setError("Failed to create user.");
@@ -106,26 +90,18 @@ export const AdminUsersPage = () => {
     }
   };
 
-  const toggleRole = (userId: string, role: RoleName) => {
-    setSelectedRoles((prev) => {
-      const current = prev[userId] ?? [];
-      const next = current.includes(role) ? current.filter((r) => r !== role) : [...current, role];
-      return { ...prev, [userId]: next };
-    });
+  const setPersonaDraft = (userId: string, persona: RoleName) => {
+    setSelectedPersona((prev) => ({ ...prev, [userId]: persona }));
   };
 
-  const saveRoles = async (userId: string) => {
-    const nextRoles = selectedRoles[userId] ?? [];
-    if (nextRoles.length === 0) {
-      setError("User must have at least one role.");
-      return;
-    }
+  const savePersona = async (userId: string) => {
+    const persona = selectedPersona[userId] ?? "TECHNICIAN";
     setError(null);
     try {
-      await api.post(`/users/${userId}/roles`, { roles: nextRoles });
+      await api.post(`/users/${userId}/roles`, { roles: [persona] });
       await load();
     } catch {
-      setError("Failed to update roles.");
+      setError("Failed to update persona.");
     }
   };
 
@@ -144,28 +120,34 @@ export const AdminUsersPage = () => {
     }
   };
 
-  const togglePageAccess = (page: PageAccessKey) => {
-    setSelectedPages((prev) =>
-      prev.includes(page) ? prev.filter((p) => p !== page) : [...prev, page]
-    );
+  const togglePersonaPage = (persona: RoleName, page: PageAccessKey) => {
+    setPersonaAccessDraft((prev) => {
+      if (!prev) return prev;
+      const current = prev[persona] ?? [];
+      const next = current.includes(page) ? current.filter((p) => p !== page) : [...current, page];
+      return { ...prev, [persona]: next };
+    });
   };
 
-  const savePageAccess = async () => {
-    if (!selectedUserId) return;
-    setSavingPages(true);
+  const startEditingPersonas = () => {
+    setPersonaAccessDraft(personaAccess);
+    setEditingPersonas(true);
+  };
+
+  const savePersonaAccess = async () => {
+    if (!personaAccessDraft) return;
+    setSavingPersonaAccess(true);
     setError(null);
     try {
-      await api.post(`/users/${selectedUserId}/page-access`, {
-        pages: selectedPages
-      });
+      await api.post("/users/persona-access", personaAccessDraft);
+      setPersonaAccess(personaAccessDraft);
+      setEditingPersonas(false);
     } catch {
-      setError("Failed to update page access.");
+      setError("Failed to update persona access.");
     } finally {
-      setSavingPages(false);
+      setSavingPersonaAccess(false);
     }
   };
-
-  const selectedUser = users.find((u) => u.id === selectedUserId);
 
   if (!isAdmin) {
     return (
@@ -181,7 +163,7 @@ export const AdminUsersPage = () => {
     <AppShell title="Admin Users">
       <section className="rounded-2xl bg-fsm-panel shadow p-6">
         <h2 className="text-xl font-semibold">Create User</h2>
-        <form className="mt-4 grid md:grid-cols-4 gap-3" onSubmit={createUser}>
+        <form className="mt-4 grid md:grid-cols-5 gap-3" onSubmit={createUser}>
           <input
             type="email"
             placeholder="Email"
@@ -205,6 +187,17 @@ export const AdminUsersPage = () => {
             onChange={(e) => setNewUser((p) => ({ ...p, password: e.target.value }))}
             required
           />
+          <select
+            className="rounded border px-3 py-2"
+            value={newUser.persona}
+            onChange={(e) => setNewUser((p) => ({ ...p, persona: e.target.value as RoleName }))}
+          >
+            {roles.map((r) => (
+              <option key={r.id} value={r.name}>
+                {r.name}
+              </option>
+            ))}
+          </select>
           <button
             className="rounded bg-fsm-accent text-white px-3 py-2 hover:bg-fsm-accentDark disabled:opacity-50"
             disabled={saving}
@@ -212,6 +205,57 @@ export const AdminUsersPage = () => {
             {saving ? "Creating..." : "Create"}
           </button>
         </form>
+      </section>
+
+      <section className="rounded-2xl bg-fsm-panel shadow p-6">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-xl font-semibold">Persona Access</h2>
+          {editingPersonas ? (
+            <button
+              className="rounded bg-fsm-accent text-white px-3 py-2 text-sm hover:bg-fsm-accentDark disabled:opacity-50"
+              onClick={() => void savePersonaAccess()}
+              disabled={savingPersonaAccess}
+            >
+              {savingPersonaAccess ? "Saving..." : "Save Persona Access"}
+            </button>
+          ) : (
+            <button
+              className="rounded border px-3 py-2 text-sm hover:bg-slate-50"
+              onClick={startEditingPersonas}
+            >
+              Edit Personas
+            </button>
+          )}
+        </div>
+        {!personaAccess ? (
+          <p className="text-slate-600">Loading...</p>
+        ) : (
+          <div className="grid md:grid-cols-2 gap-3">
+            {(Object.keys(personaAccess) as RoleName[]).map((persona) => (
+              <article key={persona} className="rounded border p-3">
+                <h3 className="font-semibold mb-2">{persona}</h3>
+                {editingPersonas && personaAccessDraft ? (
+                  <div className="flex flex-wrap gap-2">
+                    {pages.map((page) => (
+                      <label key={`${persona}-${page}`} className="inline-flex items-center gap-2 rounded border px-2 py-1 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={(personaAccessDraft[persona] ?? []).includes(page)}
+                          onChange={() => togglePersonaPage(persona, page)}
+                        />
+                        {page.replace(/-/g, " ")}
+                      </label>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-700">
+                    {personaAccess[persona].map((page) => page.replace(/-/g, " ")).join(", ")}
+                  </p>
+                )}
+              </article>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="rounded-2xl bg-fsm-panel shadow p-6">
@@ -226,7 +270,7 @@ export const AdminUsersPage = () => {
                 <tr className="text-left border-b">
                   <th className="py-2 pr-3">Email</th>
                   <th className="py-2 pr-3">Name</th>
-                  <th className="py-2 pr-3">Roles</th>
+                  <th className="py-2 pr-3">Persona</th>
                   <th className="py-2 pr-3">Password Reset</th>
                 </tr>
               </thead>
@@ -236,22 +280,23 @@ export const AdminUsersPage = () => {
                     <td className="py-2 pr-3">{u.email}</td>
                     <td className="py-2 pr-3">{u.full_name}</td>
                     <td className="py-2 pr-3">
-                      <div className="flex flex-wrap gap-2">
-                        {roles.map((r) => (
-                          <label key={r.id} className="inline-flex items-center gap-1 text-xs border rounded px-2 py-1">
-                            <input
-                              type="checkbox"
-                              checked={(selectedRoles[u.id] ?? []).includes(r.name)}
-                              onChange={() => toggleRole(u.id, r.name)}
-                            />
-                            {r.name}
-                          </label>
-                        ))}
+                      <div className="flex flex-wrap gap-2 items-center">
+                        <select
+                          className="rounded border px-2 py-1"
+                          value={selectedPersona[u.id] ?? "TECHNICIAN"}
+                          onChange={(e) => setPersonaDraft(u.id, e.target.value as RoleName)}
+                        >
+                          {roles.map((r) => (
+                            <option key={r.id} value={r.name}>
+                              {r.name}
+                            </option>
+                          ))}
+                        </select>
                         <button
                           className="rounded border px-2 py-1 text-xs hover:bg-slate-50"
-                          onClick={() => void saveRoles(u.id)}
+                          onClick={() => void savePersona(u.id)}
                         >
-                          Save Roles
+                          Save Persona
                         </button>
                       </div>
                     </td>
@@ -280,50 +325,6 @@ export const AdminUsersPage = () => {
             </table>
           </div>
         )}
-      </section>
-
-      <section className="rounded-2xl bg-fsm-panel shadow p-6">
-        <h2 className="text-xl font-semibold mb-3">Page Access Management</h2>
-        <div className="grid md:grid-cols-2 gap-3 mb-4">
-          <label className="grid gap-1">
-            <span className="text-sm text-slate-700">Select User</span>
-            <select
-              className="rounded border px-3 py-2"
-              value={selectedUserId}
-              onChange={(e) => setSelectedUserId(e.target.value)}
-            >
-              {users.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.full_name} ({u.email})
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="text-sm text-slate-600 self-end">
-            {selectedUser ? `Editing access for ${selectedUser.full_name}` : "No user selected"}
-          </div>
-        </div>
-
-        <div className="flex flex-wrap gap-2 mb-4">
-          {pages.map((page) => (
-            <label key={page} className="inline-flex items-center gap-2 rounded border px-3 py-2 text-sm">
-              <input
-                type="checkbox"
-                checked={selectedPages.includes(page)}
-                onChange={() => togglePageAccess(page)}
-              />
-              {page.replace(/-/g, " ")}
-            </label>
-          ))}
-        </div>
-
-        <button
-          className="rounded bg-fsm-accent text-white px-3 py-2 hover:bg-fsm-accentDark disabled:opacity-50"
-          onClick={() => void savePageAccess()}
-          disabled={!selectedUserId || savingPages}
-        >
-          {savingPages ? "Saving..." : "Save Page Access"}
-        </button>
       </section>
     </AppShell>
   );

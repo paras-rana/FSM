@@ -41,7 +41,8 @@ const resolveDateRange = (query: {
 
 reportsRouter.get("/dashboard", async (_req, res, next) => {
   try {
-    const [statusRows, newSrCountRows, newSrRows, closedByWeekRows, openByTechRows] = await Promise.all([
+    const [statusRows, newSrCountRows, newSrRows, closedByWeekRows, openByTechRows, longestOpenRows] =
+      await Promise.all([
       pool.query(
         `SELECT status, COUNT(*)::int AS count
          FROM work_orders
@@ -92,6 +93,19 @@ reportsRouter.get("/dashboard", async (_req, res, next) => {
            AND wo.status NOT IN ('COMPLETED', 'ARCHIVED')
          GROUP BY u.id, u.full_name
          ORDER BY open_count DESC, u.full_name ASC`
+      ),
+      pool.query(
+        `SELECT
+           wo.id,
+           wo.wo_number,
+           u.full_name AS technician_name,
+           wo.created_at AS opened_at,
+           FLOOR(EXTRACT(EPOCH FROM (NOW() - wo.created_at)) / 3600)::int AS duration_open_hours
+         FROM work_orders wo
+         LEFT JOIN users u ON u.id = wo.lead_technician_id
+         WHERE wo.status NOT IN ('COMPLETED', 'ARCHIVED')
+         ORDER BY wo.created_at ASC
+         LIMIT 5`
       )
     ]);
 
@@ -102,7 +116,8 @@ reportsRouter.get("/dashboard", async (_req, res, next) => {
         items: newSrRows.rows
       },
       closedByWeek: closedByWeekRows.rows,
-      openAssignedByTechnician: openByTechRows.rows
+      openAssignedByTechnician: openByTechRows.rows,
+      longestOpenWorkOrders: longestOpenRows.rows
     });
   } catch (error) {
     next(error);

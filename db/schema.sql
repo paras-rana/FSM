@@ -45,6 +45,12 @@ CREATE TABLE IF NOT EXISTS user_page_access (
   PRIMARY KEY (user_id, page_key)
 );
 
+CREATE TABLE IF NOT EXISTS role_page_access (
+  role_id VARCHAR(25) NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+  page_key TEXT NOT NULL,
+  PRIMARY KEY (role_id, page_key)
+);
+
 CREATE TABLE IF NOT EXISTS service_requests (
   id VARCHAR(25) PRIMARY KEY,
   sr_number BIGINT GENERATED ALWAYS AS IDENTITY UNIQUE,
@@ -157,6 +163,7 @@ CREATE TABLE IF NOT EXISTS attachments (
 CREATE INDEX IF NOT EXISTS idx_work_orders_status ON work_orders(status);
 CREATE INDEX IF NOT EXISTS idx_work_orders_created_at ON work_orders(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_user_page_access_user_id ON user_page_access(user_id);
+CREATE INDEX IF NOT EXISTS idx_role_page_access_role_id ON role_page_access(role_id);
 CREATE INDEX IF NOT EXISTS idx_facility_zones_facility_id ON facility_zones(facility_id);
 CREATE INDEX IF NOT EXISTS idx_service_requests_status ON service_requests(status);
 CREATE INDEX IF NOT EXISTS idx_service_requests_created_at ON service_requests(created_at DESC);

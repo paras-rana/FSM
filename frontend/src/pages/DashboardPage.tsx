@@ -8,22 +8,105 @@ const formatWeekRange = (weekStartRaw: string): string => {
   const start = new Date(weekStartRaw);
   if (Number.isNaN(start.getTime())) return weekStartRaw;
   const end = new Date(start);
-  end.setDate(start.getDate() + 6);
-  return `${start.toISOString().slice(0, 10)} to ${end.toISOString().slice(0, 10)}`;
+  end.setUTCDate(start.getUTCDate() + 6);
+
+  const startMonth = start.toLocaleString("en-US", { month: "short", timeZone: "UTC" });
+  const endMonth = end.toLocaleString("en-US", { month: "short", timeZone: "UTC" });
+  const startDay = start.getUTCDate();
+  const endDay = end.getUTCDate();
+
+  if (startMonth === endMonth) {
+    return `${startMonth} ${startDay}-${endDay}`;
+  }
+  return `${startMonth} ${startDay}-${endMonth} ${endDay}`;
+};
+
+const formatDurationOpen = (hoursRaw: number): string => {
+  const hours = Number(hoursRaw || 0);
+  const roundedDays = Math.max(1, Math.round(hours / 24));
+  return `${roundedDays} day${roundedDays === 1 ? "" : "s"}`;
+};
+
+const formatMonthKey = (value: Date): string =>
+  `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(2, "0")}`;
+const formatMonthLabel = (value: Date): string =>
+  value.toLocaleString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
+const formatCurrency = (amount: number): string =>
+  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(
+    Number(amount || 0)
+  );
+
+type CostKpiResponse = {
+  totals: {
+    combined: { total: number };
+  };
+};
+type LaborKpiResponse = {
+  totals: { totalHours: number };
+};
+type MonthlyKpis = {
+  thisMonthCost: number | null;
+  lastMonthCost: number | null;
+  thisMonthLabor: number | null;
+  lastMonthLabor: number | null;
 };
 
 export const DashboardPage = () => {
   const navigate = useNavigate();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  const [monthlyKpis, setMonthlyKpis] = useState<MonthlyKpis>({
+    thisMonthCost: null,
+    lastMonthCost: null,
+    thisMonthLabor: null,
+    lastMonthLabor: null
+  });
   const [loading, setLoading] = useState(true);
+
+  const now = new Date();
+  const thisMonthDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const lastMonthDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+  const thisMonthKey = formatMonthKey(thisMonthDate);
+  const lastMonthKey = formatMonthKey(lastMonthDate);
 
   useEffect(() => {
     const load = async () => {
       try {
-        const response = await api.get<DashboardSummary>("/reports/dashboard");
-        setSummary(response.data);
+        const [dashboardResult, thisCostResult, lastCostResult, thisLaborResult, lastLaborResult] =
+          await Promise.allSettled([
+            api.get<DashboardSummary>("/reports/dashboard"),
+            api.get<CostKpiResponse>(`/reports/cost-details?month=${thisMonthKey}`),
+            api.get<CostKpiResponse>(`/reports/cost-details?month=${lastMonthKey}`),
+            api.get<LaborKpiResponse>(`/reports/labor-details?month=${thisMonthKey}`),
+            api.get<LaborKpiResponse>(`/reports/labor-details?month=${lastMonthKey}`)
+          ]);
+
+        setSummary(dashboardResult.status === "fulfilled" ? dashboardResult.value.data : null);
+        setMonthlyKpis({
+          thisMonthCost:
+            thisCostResult.status === "fulfilled"
+              ? Number(thisCostResult.value.data?.totals?.combined?.total ?? 0)
+              : null,
+          lastMonthCost:
+            lastCostResult.status === "fulfilled"
+              ? Number(lastCostResult.value.data?.totals?.combined?.total ?? 0)
+              : null,
+          thisMonthLabor:
+            thisLaborResult.status === "fulfilled"
+              ? Number(thisLaborResult.value.data?.totals?.totalHours ?? 0)
+              : null,
+          lastMonthLabor:
+            lastLaborResult.status === "fulfilled"
+              ? Number(lastLaborResult.value.data?.totals?.totalHours ?? 0)
+              : null
+        });
       } catch {
         setSummary(null);
+        setMonthlyKpis({
+          thisMonthCost: null,
+          lastMonthCost: null,
+          thisMonthLabor: null,
+          lastMonthLabor: null
+        });
       } finally {
         setLoading(false);
       }
@@ -36,29 +119,21 @@ export const DashboardPage = () => {
       .filter((row) => !["COMPLETED", "ARCHIVED"].includes(row.status))
       .reduce((sum, row) => sum + Number(row.count || 0), 0) ?? 0;
   const totalNewServiceRequests = summary?.newServiceRequests.count ?? 0;
-  const closedThisWeek =
-    summary?.closedByWeek.length
-      ? Number(summary.closedByWeek[summary.closedByWeek.length - 1]?.closed_count || 0)
-      : 0;
   const activeTechnicians =
     summary?.openAssignedByTechnician.filter((row) => Number(row.open_count || 0) > 0).length ?? 0;
-  const thisWeekStart = summary?.closedByWeek[summary.closedByWeek.length - 1]?.week_start ?? null;
-  const thisWeekEndExclusive = (() => {
-    if (!thisWeekStart) return null;
-    const d = new Date(thisWeekStart);
-    if (Number.isNaN(d.getTime())) return null;
-    d.setDate(d.getDate() + 7);
-    return d.toISOString().slice(0, 10);
-  })();
+  const statusRowsTop = [...(summary?.workOrdersByStatus ?? [])]
+    .sort((a, b) => Number(b.count || 0) - Number(a.count || 0))
+    .slice(0, 3);
+  const closedByWeekTop = [...(summary?.closedByWeek ?? [])].slice(-3).reverse();
 
   return (
     <AppShell title="FSM Dashboard">
       <section className="rounded-2xl bg-fsm-panel shadow p-6">
         <h2 className="text-xl font-semibold mb-4">KPI Snapshot</h2>
-        <div className="grid md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
           <button
             type="button"
-            className="rounded-xl border p-4 bg-white/60 text-left hover:bg-white/80"
+            className="rounded-xl border p-4 bg-white/60 text-left hover:bg-white/80 border-t-4 border-t-sky-500"
             onClick={() => navigate("/work-orders?excludeStatus=COMPLETED,ARCHIVED")}
           >
             <p className="text-sm text-slate-600">Total Open Work Orders</p>
@@ -66,7 +141,7 @@ export const DashboardPage = () => {
           </button>
           <button
             type="button"
-            className="rounded-xl border p-4 bg-white/60 text-left hover:bg-white/80"
+            className="rounded-xl border p-4 bg-white/60 text-left hover:bg-white/80 border-t-4 border-t-sky-500"
             onClick={() => navigate("/service-requests?status=SUBMITTED")}
           >
             <p className="text-sm text-slate-600">Total New Service Requests</p>
@@ -74,21 +149,53 @@ export const DashboardPage = () => {
           </button>
           <button
             type="button"
-            className="rounded-xl border p-4 bg-white/60 text-left hover:bg-white/80 disabled:opacity-60"
-            disabled={!thisWeekStart || !thisWeekEndExclusive}
-            onClick={() => {
-              if (!thisWeekStart || !thisWeekEndExclusive) return;
-              navigate(
-                `/work-orders?status=COMPLETED,ARCHIVED&updatedFrom=${thisWeekStart}&updatedTo=${thisWeekEndExclusive}`
-              );
-            }}
+            className="rounded-xl border p-4 bg-white/60 text-left hover:bg-white/80 border-t-4 border-t-amber-500"
+            onClick={() => navigate("/reports")}
           >
-            <p className="text-sm text-slate-600">Closed This Week</p>
-            <p className="text-2xl font-bold mt-1">{loading ? "-" : closedThisWeek}</p>
+            <p className="text-sm text-slate-600">Total Cost (Material + Vendor)</p>
+            <p className="mt-2 text-xs text-slate-500">This Month ({formatMonthLabel(thisMonthDate)})</p>
+            <p className="text-xl font-bold mt-0.5">
+              {loading
+                ? "-"
+                : monthlyKpis.thisMonthCost === null
+                  ? "N/A"
+                  : formatCurrency(monthlyKpis.thisMonthCost)}
+            </p>
+            <p className="mt-2 text-xs text-slate-500">Last Month ({formatMonthLabel(lastMonthDate)})</p>
+            <p className="text-lg font-semibold mt-0.5">
+              {loading
+                ? "-"
+                : monthlyKpis.lastMonthCost === null
+                  ? "N/A"
+                  : formatCurrency(monthlyKpis.lastMonthCost)}
+            </p>
           </button>
           <button
             type="button"
-            className="rounded-xl border p-4 bg-white/60 text-left hover:bg-white/80"
+            className="rounded-xl border p-4 bg-white/60 text-left hover:bg-white/80 border-t-4 border-t-violet-500"
+            onClick={() => navigate("/reports")}
+          >
+            <p className="text-sm text-slate-600">Total Labor</p>
+            <p className="mt-2 text-xs text-slate-500">This Month ({formatMonthLabel(thisMonthDate)})</p>
+            <p className="text-xl font-bold mt-0.5">
+              {loading
+                ? "-"
+                : monthlyKpis.thisMonthLabor === null
+                  ? "N/A"
+                  : `${monthlyKpis.thisMonthLabor.toFixed(1)} hrs`}
+            </p>
+            <p className="mt-2 text-xs text-slate-500">Last Month ({formatMonthLabel(lastMonthDate)})</p>
+            <p className="text-lg font-semibold mt-0.5">
+              {loading
+                ? "-"
+                : monthlyKpis.lastMonthLabor === null
+                  ? "N/A"
+                  : `${monthlyKpis.lastMonthLabor.toFixed(1)} hrs`}
+            </p>
+          </button>
+          <button
+            type="button"
+            className="rounded-xl border p-4 bg-white/60 text-left hover:bg-white/80 border-t-4 border-t-rose-500"
             onClick={() =>
               navigate("/work-orders?excludeStatus=COMPLETED,ARCHIVED&assignedOnly=true")
             }
@@ -99,159 +206,103 @@ export const DashboardPage = () => {
         </div>
       </section>
 
-      <section className="rounded-2xl bg-fsm-panel shadow p-6">
-        <h2 className="text-xl font-semibold mb-4">Work Orders By Status</h2>
-        {loading ? (
-          <p className="text-slate-600">Loading...</p>
-        ) : !summary || summary.workOrdersByStatus.length === 0 ? (
-          <p className="text-slate-600">No work order status data available.</p>
-        ) : (
-          <div className="overflow-auto">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="text-left border-b">
-                  <th className="py-2 pr-4">Status</th>
-                  <th className="py-2 pr-4">Count</th>
-                </tr>
-              </thead>
-              <tbody>
-                {summary.workOrdersByStatus.map((row) => (
-                  <tr
-                    key={row.status}
-                    className="border-b last:border-0 cursor-pointer hover:bg-white/40"
-                    onClick={() => navigate(`/work-orders?status=${row.status}`)}
-                  >
-                    <td className="py-2 pr-4">{row.status}</td>
-                    <td className="py-2 pr-4">{row.count}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      <section className="rounded-2xl bg-fsm-panel shadow p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold">New Service Requests</h2>
-          {!loading && summary && (
-            <p className="text-sm rounded bg-white px-3 py-1 border">
-              Total New: <strong>{summary.newServiceRequests.count}</strong>
-            </p>
+      <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="rounded-2xl bg-fsm-panel shadow p-6">
+          <h2 className="text-xl font-semibold mb-4">Work Orders By Status</h2>
+          {loading ? (
+            <p className="text-slate-600">Loading...</p>
+          ) : !summary || statusRowsTop.length === 0 ? (
+            <p className="text-slate-600">No work order status data available.</p>
+          ) : (
+            <div className="space-y-2">
+              {statusRowsTop.map((row) => (
+                <button
+                  key={row.status}
+                  type="button"
+                  className="w-full text-left rounded border bg-white/60 px-3 py-2 hover:bg-white/80"
+                  onClick={() => navigate(`/work-orders?status=${row.status}`)}
+                >
+                  <span className="text-sm text-slate-600">{row.status}</span>
+                  <span className="float-right font-semibold">{row.count}</span>
+                </button>
+              ))}
+            </div>
           )}
         </div>
-        {loading ? (
-          <p className="text-slate-600">Loading...</p>
-        ) : !summary || summary.newServiceRequests.items.length === 0 ? (
-          <p className="text-slate-600">No new service requests.</p>
-        ) : (
-          <div className="overflow-auto">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="text-left border-b">
-                  <th className="py-2 pr-4">SR #</th>
-                  <th className="py-2 pr-4">Requestor</th>
-                  <th className="py-2 pr-4">Building</th>
-                  <th className="py-2 pr-4">Area</th>
-                  <th className="py-2 pr-4">Urgency</th>
-                  <th className="py-2 pr-4">Status</th>
-                  <th className="py-2 pr-4">Created</th>
-                </tr>
-              </thead>
-              <tbody>
-                {summary.newServiceRequests.items.map((item) => (
-                  <tr
-                    key={item.id}
-                    className="border-b last:border-0 cursor-pointer hover:bg-white/40"
-                    onClick={() => navigate(`/service-requests/${item.id}`)}
-                  >
-                    <td className="py-2 pr-4">{item.sr_number}</td>
-                    <td className="py-2 pr-4">{item.requestor_name}</td>
-                    <td className="py-2 pr-4">{item.building ?? "-"}</td>
-                    <td className="py-2 pr-4">{item.area ?? "-"}</td>
-                    <td className="py-2 pr-4">{item.urgency ?? "-"}</td>
-                    <td className="py-2 pr-4">{item.status}</td>
-                    <td className="py-2 pr-4">{new Date(item.created_at).toLocaleString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+
+        <div className="rounded-2xl bg-fsm-panel shadow p-6">
+          <h2 className="text-xl font-semibold mb-4">Work Orders Closed By Week</h2>
+          {loading ? (
+            <p className="text-slate-600">Loading...</p>
+          ) : !summary || closedByWeekTop.length === 0 ? (
+            <p className="text-slate-600">No closure data available.</p>
+          ) : (
+            <div className="space-y-2">
+              {closedByWeekTop.map((row) => (
+                <button
+                  key={row.week_start}
+                  type="button"
+                  className="w-full text-left rounded border bg-white/60 px-3 py-2 hover:bg-white/80"
+                  onClick={() => {
+                    const start = new Date(row.week_start);
+                    if (Number.isNaN(start.getTime())) return;
+                    const endExclusive = new Date(start);
+                    endExclusive.setDate(start.getDate() + 7);
+                    navigate(
+                      `/work-orders?status=COMPLETED,ARCHIVED&updatedFrom=${start
+                        .toISOString()
+                        .slice(0, 10)}&updatedTo=${endExclusive.toISOString().slice(0, 10)}`
+                    );
+                  }}
+                >
+                  <span className="text-sm text-slate-600">{formatWeekRange(row.week_start)}</span>
+                  <span className="float-right font-semibold">{row.closed_count}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-2xl bg-fsm-panel shadow p-6">
+          <h2 className="text-xl font-semibold mb-2">New Service Requests</h2>
+          <p className="text-sm text-slate-600 mb-4">Current submitted requests</p>
+          <p className="text-4xl font-bold mb-4">{loading ? "-" : totalNewServiceRequests}</p>
+          <button
+            type="button"
+            className="text-sm font-medium text-fsm-primary hover:underline"
+            onClick={() => navigate("/service-requests?status=SUBMITTED")}
+          >
+            View Service Requests
+          </button>
+        </div>
       </section>
 
       <section className="rounded-2xl bg-fsm-panel shadow p-6">
-        <h2 className="text-xl font-semibold mb-4">Work Orders Closed By Week (Last 4 Weeks)</h2>
+        <h2 className="text-xl font-semibold mb-4">Open Work Orders</h2>
         {loading ? (
           <p className="text-slate-600">Loading...</p>
-        ) : !summary || summary.closedByWeek.length === 0 ? (
-          <p className="text-slate-600">No closure data available.</p>
+        ) : !summary || summary.longestOpenWorkOrders.length === 0 ? (
+          <p className="text-slate-600">No open work orders found.</p>
         ) : (
           <div className="overflow-auto">
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="text-left border-b">
-                  <th className="py-2 pr-4">Week</th>
-                  <th className="py-2 pr-4">Closed Count</th>
+                  <th className="py-2 pr-4">WO #</th>
+                  <th className="py-2 pr-4">Tech Assigned</th>
+                  <th className="py-2 pr-4">Duration Open</th>
                 </tr>
               </thead>
               <tbody>
-                {summary.closedByWeek.map((row) => (
+                {summary.longestOpenWorkOrders.map((row) => (
                   <tr
-                    key={row.week_start}
+                    key={row.id}
                     className="border-b last:border-0 cursor-pointer hover:bg-white/40"
-                    onClick={() => {
-                      const start = new Date(row.week_start);
-                      if (Number.isNaN(start.getTime())) return;
-                      const endExclusive = new Date(start);
-                      endExclusive.setDate(start.getDate() + 7);
-                      navigate(
-                        `/work-orders?status=COMPLETED,ARCHIVED&updatedFrom=${start
-                          .toISOString()
-                          .slice(0, 10)}&updatedTo=${endExclusive.toISOString().slice(0, 10)}`
-                      );
-                    }}
+                    onClick={() => navigate(`/work-orders/${row.id}`)}
                   >
-                    <td className="py-2 pr-4">{formatWeekRange(row.week_start)}</td>
-                    <td className="py-2 pr-4">{row.closed_count}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      <section className="rounded-2xl bg-fsm-panel shadow p-6">
-        <h2 className="text-xl font-semibold mb-4">
-          Open Work Orders Assigned By Technician (Excluding Closed)
-        </h2>
-        {loading ? (
-          <p className="text-slate-600">Loading...</p>
-        ) : !summary || summary.openAssignedByTechnician.length === 0 ? (
-          <p className="text-slate-600">No assigned open work orders found.</p>
-        ) : (
-          <div className="overflow-auto">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="text-left border-b">
-                  <th className="py-2 pr-4">Technician</th>
-                  <th className="py-2 pr-4">Open Assigned Count</th>
-                </tr>
-              </thead>
-              <tbody>
-                {summary.openAssignedByTechnician.map((row) => (
-                  <tr
-                    key={row.technician_id}
-                    className="border-b last:border-0 cursor-pointer hover:bg-white/40"
-                    onClick={() =>
-                      navigate(
-                        `/work-orders?excludeStatus=COMPLETED,ARCHIVED&leadTechnicianId=${row.technician_id}`
-                      )
-                    }
-                  >
-                    <td className="py-2 pr-4">{row.full_name}</td>
-                    <td className="py-2 pr-4">{row.open_count}</td>
+                    <td className="py-2 pr-4">{row.wo_number}</td>
+                    <td className="py-2 pr-4">{row.technician_name ?? "Unassigned"}</td>
+                    <td className="py-2 pr-4">{formatDurationOpen(Number(row.duration_open_hours || 0))}</td>
                   </tr>
                 ))}
               </tbody>

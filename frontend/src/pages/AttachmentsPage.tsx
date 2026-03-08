@@ -1,11 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { AppShell } from "../components/AppShell";
 import { api } from "../modules/api/client";
-import { useAuth } from "../modules/auth/AuthContext";
-import { hasAnyRole } from "../modules/auth/roles";
 import type { AttachmentItem } from "../types";
-
-const entityTypes = ["WORK_ORDER", "LABOR_ENTRY", "MATERIAL", "VENDOR_INVOICE", "SERVICE_REQUEST"] as const;
 
 const formatSize = (bytes: number): string => {
   if (bytes < 1024) return `${bytes} B`;
@@ -14,59 +10,36 @@ const formatSize = (bytes: number): string => {
 };
 
 export const AttachmentsPage = () => {
-  const { user } = useAuth();
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [uploading, setUploading] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [form, setForm] = useState({
-    entityType: "WORK_ORDER",
-    entityId: ""
+  const [searched, setSearched] = useState(false);
+  const [filters, setFilters] = useState({
+    workOrderNumber: "",
+    from: "",
+    to: ""
   });
-  const [file, setFile] = useState<File | null>(null);
 
-  const canUpload = useMemo(
-    () => hasAnyRole(user?.roles, ["TECHNICIAN", "MANAGER", "ADMIN"]),
-    [user?.roles]
-  );
-
-  const load = async () => {
+  const search = async (event: React.FormEvent) => {
+    event.preventDefault();
     setLoading(true);
     setError(null);
+    setSearched(true);
     try {
-      const res = await api.get<AttachmentItem[]>("/uploads?limit=100");
+      const params = new URLSearchParams();
+      params.set("entityType", "WORK_ORDER");
+      params.set("limit", "200");
+      if (filters.workOrderNumber.trim()) {
+        params.set("workOrderNumber", filters.workOrderNumber.trim());
+      }
+      if (filters.from) params.set("from", filters.from);
+      if (filters.to) params.set("to", filters.to);
+      const res = await api.get<AttachmentItem[]>(`/uploads?${params.toString()}`);
       setAttachments(res.data);
     } catch {
       setError("Failed to load attachments.");
     } finally {
       setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    void load();
-  }, []);
-
-  const upload = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!canUpload || !file) return;
-    setUploading(true);
-    setError(null);
-    try {
-      const data = new FormData();
-      data.append("entityType", form.entityType);
-      data.append("entityId", form.entityId);
-      data.append("file", file);
-      await api.post("/uploads", data, {
-        headers: { "Content-Type": "multipart/form-data" }
-      });
-      setFile(null);
-      setForm((p) => ({ ...p, entityId: "" }));
-      await load();
-    } catch {
-      setError("Upload failed. Check entity ID and file type/size limits.");
-    } finally {
-      setUploading(false);
     }
   };
 
@@ -91,48 +64,44 @@ export const AttachmentsPage = () => {
 
   return (
     <AppShell title="Attachments">
-      {canUpload && (
-        <section className="rounded-2xl bg-fsm-panel shadow p-6">
-          <h2 className="text-xl font-semibold">Upload Attachment</h2>
-          <form className="mt-4 grid md:grid-cols-4 gap-3" onSubmit={upload}>
-            <select
-              className="rounded border px-3 py-2"
-              value={form.entityType}
-              onChange={(e) => setForm((p) => ({ ...p, entityType: e.target.value }))}
-            >
-              {entityTypes.map((type) => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
-              ))}
-            </select>
-            <input
-              placeholder="Entity ID"
-              className="rounded border px-3 py-2"
-              value={form.entityId}
-              onChange={(e) => setForm((p) => ({ ...p, entityId: e.target.value }))}
-              required
-            />
-            <input
-              type="file"
-              className="rounded border px-3 py-2"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-              required
-            />
-            <button
-              className="rounded bg-fsm-accent text-white px-3 py-2 hover:bg-fsm-accentDark disabled:opacity-50"
-              disabled={uploading}
-            >
-              {uploading ? "Uploading..." : "Upload"}
-            </button>
-          </form>
-        </section>
-      )}
+      <section className="rounded-2xl bg-fsm-panel shadow p-6">
+        <h2 className="text-xl font-semibold">Search Attachments</h2>
+        <p className="text-sm text-slate-600 mt-1">
+          Search by work order number, date range, or both.
+        </p>
+        <form className="mt-4 grid md:grid-cols-4 gap-3" onSubmit={search}>
+          <input
+            type="number"
+            min={1}
+            placeholder="Work Order #"
+            className="rounded border px-3 py-2"
+            value={filters.workOrderNumber}
+            onChange={(e) => setFilters((p) => ({ ...p, workOrderNumber: e.target.value }))}
+          />
+          <input
+            type="date"
+            className="rounded border px-3 py-2"
+            value={filters.from}
+            onChange={(e) => setFilters((p) => ({ ...p, from: e.target.value }))}
+          />
+          <input
+            type="date"
+            className="rounded border px-3 py-2"
+            value={filters.to}
+            onChange={(e) => setFilters((p) => ({ ...p, to: e.target.value }))}
+          />
+          <button className="rounded bg-fsm-accent text-white px-3 py-2 hover:bg-fsm-accentDark">
+            Search
+          </button>
+        </form>
+      </section>
 
       <section className="rounded-2xl bg-fsm-panel shadow p-6">
         <h2 className="text-xl font-semibold mb-3">Attachment Library</h2>
         {error && <p className="text-red-600 text-sm mb-2">{error}</p>}
-        {loading ? (
+        {!searched ? (
+          <p className="text-slate-600">Run a search to view attachments.</p>
+        ) : loading ? (
           <p className="text-slate-600">Loading...</p>
         ) : attachments.length === 0 ? (
           <p className="text-slate-600">No attachments found.</p>
@@ -142,7 +111,7 @@ export const AttachmentsPage = () => {
               <thead>
                 <tr className="text-left border-b">
                   <th className="py-2 pr-3">Name</th>
-                  <th className="py-2 pr-3">Entity</th>
+                  <th className="py-2 pr-3">Work Order</th>
                   <th className="py-2 pr-3">MIME</th>
                   <th className="py-2 pr-3">Size</th>
                   <th className="py-2 pr-3">Uploaded</th>
@@ -153,14 +122,15 @@ export const AttachmentsPage = () => {
                 {attachments.map((item) => (
                   <tr key={item.id} className="border-b last:border-0">
                     <td className="py-2 pr-3">{item.original_file_name}</td>
-                    <td className="py-2 pr-3">
-                      {item.entity_type}: {item.entity_id}
-                    </td>
+                    <td className="py-2 pr-3">{item.work_order_number ? `WO-${item.work_order_number}` : "-"}</td>
                     <td className="py-2 pr-3">{item.mime_type}</td>
                     <td className="py-2 pr-3">{formatSize(item.file_size)}</td>
                     <td className="py-2 pr-3">{new Date(item.created_at).toLocaleString()}</td>
                     <td className="py-2 pr-3">
-                      <button className="rounded border px-2 py-1 hover:bg-slate-50" onClick={() => void download(item)}>
+                      <button
+                        className="rounded bg-fsm-accent text-white px-3 py-1.5 text-sm font-medium hover:bg-fsm-accentDark"
+                        onClick={() => void download(item)}
+                      >
                         Download
                       </button>
                     </td>
@@ -174,4 +144,3 @@ export const AttachmentsPage = () => {
     </AppShell>
   );
 };
-
