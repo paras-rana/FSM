@@ -10,6 +10,7 @@ import { costsRouter } from "./routes/costs.routes";
 import { facilitiesRouter, publicFacilitiesRouter } from "./routes/facilities.routes";
 import { laborEntriesRouter } from "./routes/labor-entries.routes";
 import { notificationsRouter } from "./routes/notifications.routes";
+import { inventoryRouter } from "./routes/inventory.routes";
 import { reportsRouter } from "./routes/reports.routes";
 import {
   publicServiceRequestsRouter,
@@ -46,6 +47,7 @@ app.use("/api/users", usersRouter);
 app.use("/api/facilities", facilitiesRouter);
 app.use("/api/work-orders", workOrdersRouter);
 app.use("/api/labor-entries", laborEntriesRouter);
+app.use("/api/inventory", inventoryRouter);
 app.use("/api/reports", reportsRouter);
 app.use("/api/costs", costsRouter);
 app.use("/api/notifications", notificationsRouter);

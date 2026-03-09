@@ -14,6 +14,7 @@ import { WorkOrdersPage } from "./pages/WorkOrdersPage";
 import { ReportsPage } from "./pages/ReportsPage";
 import { ThemeTemplatesPage } from "./pages/ThemeTemplatesPage";
 import { FacilitiesPage } from "./pages/FacilitiesPage";
+import { InventoryPage } from "./pages/InventoryPage";
 
 export const App = () => {
   return (
@@ -89,6 +90,14 @@ export const App = () => {
         element={
           <ProtectedRoute requiredPage="attachments">
             <AttachmentsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/inventory"
+        element={
+          <ProtectedRoute requiredPage="inventory">
+            <InventoryPage />
           </ProtectedRoute>
         }
       />

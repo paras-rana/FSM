@@ -10,6 +10,7 @@ export const ALL_PAGE_ACCESS_KEYS: PageAccessKey[] = [
   "theme-templates",
   "facilities",
   "attachments",
+  "inventory",
   "notifications",
   "admin-users"
 ];
@@ -31,6 +32,7 @@ const PAGE_TO_PATH: Record<PageAccessKey, string> = {
   "theme-templates": "/theme-templates",
   facilities: "/facilities",
   attachments: "/attachments",
+  inventory: "/inventory",
   notifications: "/notifications",
   "admin-users": "/admin/users"
 };

@@ -93,6 +93,14 @@ export const AttachmentIcon = (props: IconProps) => (
   </svg>
 );
 
+export const InventoryIcon = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M3 7l9-4 9 4-9 4-9-4z" />
+    <path d="M3 7v10l9 4 9-4V7" />
+    <path d="M12 11v10" />
+  </svg>
+);
+
 export const AdminIcon = (props: IconProps) => (
   <svg {...base(props)}>
     <circle cx="9" cy="8" r="3" />

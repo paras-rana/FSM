@@ -11,6 +11,7 @@ export const ALL_PAGE_ACCESS_KEYS = [
   "theme-templates",
   "facilities",
   "attachments",
+  "inventory",
   "notifications",
   "admin-users"
 ] as const;
@@ -24,6 +25,7 @@ export const PERSONA_PAGE_ACCESS: Record<RoleName, PageAccessKey[]> = {
     "work-orders",
     "service-requests",
     "reports",
+    "inventory",
     "attachments",
     "notifications"
   ],
@@ -32,6 +34,7 @@ export const PERSONA_PAGE_ACCESS: Record<RoleName, PageAccessKey[]> = {
     "work-orders",
     "service-requests",
     "timesheet",
+    "inventory",
     "attachments",
     "notifications"
   ],

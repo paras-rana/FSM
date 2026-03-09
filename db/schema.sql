@@ -170,6 +170,55 @@ CREATE TABLE IF NOT EXISTS work_order_notes (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS inventory_parts (
+  id VARCHAR(25) PRIMARY KEY,
+  part_number TEXT NOT NULL UNIQUE,
+  part_name TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS inventory_locations (
+  id VARCHAR(25) PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  location_type TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT chk_inventory_location_type CHECK (location_type IN ('WAREHOUSE', 'VAN'))
+);
+
+CREATE TABLE IF NOT EXISTS inventory_balances (
+  part_id VARCHAR(25) NOT NULL REFERENCES inventory_parts(id) ON DELETE CASCADE,
+  location_id VARCHAR(25) NOT NULL REFERENCES inventory_locations(id) ON DELETE CASCADE,
+  quantity INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (part_id, location_id),
+  CONSTRAINT chk_inventory_balance_quantity CHECK (quantity >= 0)
+);
+
+CREATE TABLE IF NOT EXISTS inventory_transactions (
+  id VARCHAR(25) PRIMARY KEY,
+  transaction_type TEXT NOT NULL,
+  part_id VARCHAR(25) NOT NULL REFERENCES inventory_parts(id),
+  from_location_id VARCHAR(25) NULL REFERENCES inventory_locations(id),
+  to_location_id VARCHAR(25) NULL REFERENCES inventory_locations(id),
+  quantity INTEGER NOT NULL,
+  work_order_id VARCHAR(25) NULL REFERENCES work_orders(id),
+  note TEXT NOT NULL DEFAULT '',
+  created_by VARCHAR(25) NOT NULL REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT chk_inventory_txn_type CHECK (transaction_type IN ('PURCHASE', 'TRANSFER', 'CONSUME')),
+  CONSTRAINT chk_inventory_txn_quantity CHECK (quantity > 0)
+);
+
+CREATE TABLE IF NOT EXISTS work_order_consumed_parts (
+  id VARCHAR(25) PRIMARY KEY,
+  work_order_id VARCHAR(25) NOT NULL REFERENCES work_orders(id) ON DELETE CASCADE,
+  part_id VARCHAR(25) NOT NULL REFERENCES inventory_parts(id),
+  location_id VARCHAR(25) NOT NULL REFERENCES inventory_locations(id),
+  quantity INTEGER NOT NULL,
+  consumed_by VARCHAR(25) NOT NULL REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT chk_work_order_consumed_parts_quantity CHECK (quantity > 0)
+);
+
 CREATE INDEX IF NOT EXISTS idx_work_orders_status ON work_orders(status);
 CREATE INDEX IF NOT EXISTS idx_work_orders_created_at ON work_orders(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_user_page_access_user_id ON user_page_access(user_id);
@@ -184,6 +233,10 @@ CREATE INDEX IF NOT EXISTS idx_vendor_invoices_work_order_id ON vendor_invoices(
 CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_attachments_entity ON attachments(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_work_order_notes_work_order_id ON work_order_notes(work_order_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_inventory_parts_name ON inventory_parts(part_name);
+CREATE INDEX IF NOT EXISTS idx_inventory_balances_location ON inventory_balances(location_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_transactions_part_created ON inventory_transactions(part_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_work_order_consumed_parts_work_order ON work_order_consumed_parts(work_order_id, created_at DESC);
 
 ALTER TABLE service_requests
   ADD COLUMN IF NOT EXISTS building TEXT NOT NULL DEFAULT 'HQ',

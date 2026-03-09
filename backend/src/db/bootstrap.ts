@@ -72,6 +72,82 @@ export const runBootstrapMigrations = async (): Promise<void> => {
     ON work_order_notes(work_order_id, created_at DESC)
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS inventory_parts (
+      id VARCHAR(25) PRIMARY KEY,
+      part_number TEXT NOT NULL UNIQUE,
+      part_name TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS inventory_locations (
+      id VARCHAR(25) PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      location_type TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      CONSTRAINT chk_inventory_location_type CHECK (location_type IN ('WAREHOUSE', 'VAN'))
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS inventory_balances (
+      part_id VARCHAR(25) NOT NULL REFERENCES inventory_parts(id) ON DELETE CASCADE,
+      location_id VARCHAR(25) NOT NULL REFERENCES inventory_locations(id) ON DELETE CASCADE,
+      quantity INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (part_id, location_id),
+      CONSTRAINT chk_inventory_balance_quantity CHECK (quantity >= 0)
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS inventory_transactions (
+      id VARCHAR(25) PRIMARY KEY,
+      transaction_type TEXT NOT NULL,
+      part_id VARCHAR(25) NOT NULL REFERENCES inventory_parts(id),
+      from_location_id VARCHAR(25) NULL REFERENCES inventory_locations(id),
+      to_location_id VARCHAR(25) NULL REFERENCES inventory_locations(id),
+      quantity INTEGER NOT NULL,
+      work_order_id VARCHAR(25) NULL REFERENCES work_orders(id),
+      note TEXT NOT NULL DEFAULT '',
+      created_by VARCHAR(25) NOT NULL REFERENCES users(id),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      CONSTRAINT chk_inventory_txn_type CHECK (transaction_type IN ('PURCHASE', 'TRANSFER', 'CONSUME')),
+      CONSTRAINT chk_inventory_txn_quantity CHECK (quantity > 0)
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS work_order_consumed_parts (
+      id VARCHAR(25) PRIMARY KEY,
+      work_order_id VARCHAR(25) NOT NULL REFERENCES work_orders(id) ON DELETE CASCADE,
+      part_id VARCHAR(25) NOT NULL REFERENCES inventory_parts(id),
+      location_id VARCHAR(25) NOT NULL REFERENCES inventory_locations(id),
+      quantity INTEGER NOT NULL,
+      consumed_by VARCHAR(25) NOT NULL REFERENCES users(id),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      CONSTRAINT chk_work_order_consumed_parts_quantity CHECK (quantity > 0)
+    )
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_inventory_parts_name
+    ON inventory_parts(part_name)
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_inventory_balances_location
+    ON inventory_balances(location_id)
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_inventory_transactions_part_created
+    ON inventory_transactions(part_id, created_at DESC)
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_work_order_consumed_parts_work_order
+    ON work_order_consumed_parts(work_order_id, created_at DESC)
+  `);
+
   const { rows } = await pool.query(`SELECT COUNT(*)::int AS count FROM role_page_access`);
   const currentCount = rows[0]?.count ?? 0;
   if (currentCount === 0) {
@@ -89,6 +165,14 @@ export const runBootstrapMigrations = async (): Promise<void> => {
       }
     }
   }
+
+  await pool.query(`
+    INSERT INTO role_page_access (role_id, page_key)
+    SELECT id, 'inventory'
+    FROM roles
+    WHERE name IN ('ADMIN', 'MANAGER', 'TECHNICIAN')
+    ON CONFLICT DO NOTHING
+  `);
 
   await pool.query(`
     ALTER TABLE service_requests
@@ -127,5 +211,14 @@ export const runBootstrapMigrations = async (): Promise<void> => {
     ALTER TABLE facilities
       ADD COLUMN IF NOT EXISTS city TEXT NOT NULL DEFAULT '',
       ADD COLUMN IF NOT EXISTS zipcode TEXT NOT NULL DEFAULT ''
+  `);
+
+  await pool.query(`
+    INSERT INTO inventory_locations (id, name, location_type)
+    VALUES
+      ('loc_wh_main', 'Main Warehouse', 'WAREHOUSE'),
+      ('loc_wh_east', 'East Warehouse', 'WAREHOUSE'),
+      ('loc_van_01', 'Van 01', 'VAN')
+    ON CONFLICT (name) DO NOTHING
   `);
 };

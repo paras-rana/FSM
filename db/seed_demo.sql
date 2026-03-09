@@ -136,6 +136,82 @@ VALUES
   )
 ON CONFLICT (id) DO NOTHING;
 
+-- Demo inventory parts
+INSERT INTO inventory_parts (id, part_number, part_name)
+VALUES
+  ('cpart00000000000000000001', 'FLT-20X25', 'Air Filter 20x25'),
+  ('cpart00000000000000000002', 'SNS-DOCK-01', 'Dock Door Sensor'),
+  ('cpart00000000000000000003', 'BLT-M8-040', 'Bolt M8 x 40'),
+  ('cpart00000000000000000004', 'CBL-14AWG', 'Electrical Cable 14 AWG'),
+  ('cpart00000000000000000005', 'BRG-MTR-3HP', 'Motor Bearing Kit 3HP'),
+  ('cpart00000000000000000006', 'FUS-30A', 'Fuse 30A')
+ON CONFLICT (part_number) DO NOTHING;
+
+-- Demo inventory balances across warehouses and vans
+INSERT INTO inventory_balances (part_id, location_id, quantity)
+VALUES
+  ('cpart00000000000000000001', 'loc_wh_main', 120),
+  ('cpart00000000000000000002', 'loc_wh_main', 35),
+  ('cpart00000000000000000003', 'loc_wh_main', 500),
+  ('cpart00000000000000000004', 'loc_wh_main', 240),
+  ('cpart00000000000000000005', 'loc_wh_east', 28),
+  ('cpart00000000000000000006', 'loc_wh_east', 75),
+  ('cpart00000000000000000001', 'loc_van_01', 12),
+  ('cpart00000000000000000002', 'loc_van_01', 5),
+  ('cpart00000000000000000003', 'loc_van_01', 55)
+ON CONFLICT (part_id, location_id) DO UPDATE
+SET quantity = EXCLUDED.quantity;
+
+-- Demo inventory transactions
+INSERT INTO inventory_transactions (
+  id,
+  transaction_type,
+  part_id,
+  from_location_id,
+  to_location_id,
+  quantity,
+  work_order_id,
+  note,
+  created_by
+)
+VALUES
+  ('citxn00000000000000000001', 'PURCHASE', 'cpart00000000000000000001', NULL, 'loc_wh_main', 120, NULL, 'Initial stock', 'cuser00000000000000000002'),
+  ('citxn00000000000000000002', 'PURCHASE', 'cpart00000000000000000002', NULL, 'loc_wh_main', 35, NULL, 'Initial stock', 'cuser00000000000000000002'),
+  ('citxn00000000000000000003', 'PURCHASE', 'cpart00000000000000000005', NULL, 'loc_wh_east', 28, NULL, 'Initial stock', 'cuser00000000000000000002'),
+  ('citxn00000000000000000004', 'TRANSFER', 'cpart00000000000000000001', 'loc_wh_main', 'loc_van_01', 14, NULL, 'Van restock', 'cuser00000000000000000002'),
+  ('citxn00000000000000000005', 'TRANSFER', 'cpart00000000000000000002', 'loc_wh_main', 'loc_van_01', 6, NULL, 'Van restock', 'cuser00000000000000000002')
+ON CONFLICT (id) DO NOTHING;
+
+-- Demo consumed parts on seeded work orders
+INSERT INTO work_order_consumed_parts (
+  id,
+  work_order_id,
+  part_id,
+  location_id,
+  quantity,
+  consumed_by
+)
+VALUES
+  ('cwocp00000000000000000001', 'cdemowo000000000000000001', 'cpart00000000000000000001', 'loc_van_01', 2, 'cuser00000000000000000003'),
+  ('cwocp00000000000000000002', 'cdemowo000000000000000002', 'cpart00000000000000000002', 'loc_van_01', 1, 'cuser00000000000000000003')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO inventory_transactions (
+  id,
+  transaction_type,
+  part_id,
+  from_location_id,
+  to_location_id,
+  quantity,
+  work_order_id,
+  note,
+  created_by
+)
+VALUES
+  ('citxn00000000000000000006', 'CONSUME', 'cpart00000000000000000001', 'loc_van_01', NULL, 2, 'cdemowo000000000000000001', 'Consumed on WO', 'cuser00000000000000000003'),
+  ('citxn00000000000000000007', 'CONSUME', 'cpart00000000000000000002', 'loc_van_01', NULL, 1, 'cdemowo000000000000000002', 'Consumed on WO', 'cuser00000000000000000003')
+ON CONFLICT (id) DO NOTHING;
+
 -- Demo work orders
 INSERT INTO work_orders (id, title, description, status, lead_technician_id)
 VALUES

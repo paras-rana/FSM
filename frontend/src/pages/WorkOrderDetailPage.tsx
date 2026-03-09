@@ -9,10 +9,13 @@ import { formatStatusLabel } from "../modules/status/format";
 import type {
   AttachmentItem,
   CostTotals,
+  InventoryAvailablePart,
+  InventoryLocation,
   LaborEntry,
   MaterialItem,
   VendorInvoiceItem,
   WorkOrder,
+  WorkOrderConsumedPart,
   WorkOrderNote
 } from "../types";
 
@@ -85,7 +88,15 @@ type TechnicianOption = {
   email: string;
 };
 
-type OverlayType = "material" | "labor" | "vendor" | "attachment" | "status" | "reassign" | null;
+type OverlayType =
+  | "material"
+  | "labor"
+  | "vendor"
+  | "attachment"
+  | "consume-parts"
+  | "status"
+  | "reassign"
+  | null;
 type ReassignCostType = "material" | "vendor";
 type ReassignCostOption = {
   key: string;
@@ -113,6 +124,9 @@ export const WorkOrderDetailPage = () => {
   const [workOrderOptions, setWorkOrderOptions] = useState<WorkOrder[]>([]);
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
   const [notes, setNotes] = useState<WorkOrderNote[]>([]);
+  const [consumedParts, setConsumedParts] = useState<WorkOrderConsumedPart[]>([]);
+  const [inventoryLocations, setInventoryLocations] = useState<InventoryLocation[]>([]);
+  const [availableInventoryParts, setAvailableInventoryParts] = useState<InventoryAvailablePart[]>([]);
   const [technicians, setTechnicians] = useState<TechnicianOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -139,6 +153,11 @@ export const WorkOrderDetailPage = () => {
     entryDate: today
   });
   const [file, setFile] = useState<File | null>(null);
+  const [consumeForm, setConsumeForm] = useState({
+    locationId: "",
+    partId: "",
+    quantity: "1"
+  });
   const [newNote, setNewNote] = useState("");
   const [noteSaving, setNoteSaving] = useState(false);
   const [reassignForm, setReassignForm] = useState({
@@ -219,14 +238,15 @@ export const WorkOrderDetailPage = () => {
     if (showLoading) setLoading(true);
     setError(null);
     try {
-      const [woRes, totalsRes, materialsRes, vendorInvoicesRes, laborRes, uploadsRes, notesRes] = await Promise.all([
+      const [woRes, totalsRes, materialsRes, vendorInvoicesRes, laborRes, uploadsRes, notesRes, consumedRes] = await Promise.all([
         api.get<WorkOrder>(`/work-orders/${workOrderId}`),
         api.get<CostTotals>(`/costs/totals?workOrderId=${workOrderId}`),
         api.get<MaterialItem[]>(`/costs/materials?workOrderId=${workOrderId}`),
         api.get<VendorInvoiceItem[]>(`/costs/vendor-invoices?workOrderId=${workOrderId}`),
         api.get<LaborEntry[]>(`/labor-entries?workOrderId=${workOrderId}&limit=200`),
         api.get<AttachmentItem[]>(`/uploads?entityType=WORK_ORDER&entityId=${workOrderId}&limit=200`),
-        api.get<WorkOrderNote[]>(`/work-orders/${workOrderId}/notes`)
+        api.get<WorkOrderNote[]>(`/work-orders/${workOrderId}/notes`),
+        api.get<WorkOrderConsumedPart[]>(`/inventory/work-orders/${workOrderId}/consumed-parts`)
       ]);
       setWorkOrder(woRes.data);
       setNextStatus("");
@@ -237,6 +257,7 @@ export const WorkOrderDetailPage = () => {
       setLabor(laborRes.data);
       setAttachments(uploadsRes.data);
       setNotes(notesRes.data);
+      setConsumedParts(consumedRes.data);
     } catch {
       setError("Failed to load work order details.");
     } finally {
@@ -285,6 +306,46 @@ export const WorkOrderDetailPage = () => {
     };
     void loadTechnicians();
   }, [isManagerOrAdmin]);
+
+  useEffect(() => {
+    const loadInventoryLocations = async () => {
+      try {
+        const response = await api.get<InventoryLocation[]>("/inventory/locations");
+        setInventoryLocations(response.data);
+        setConsumeForm((prev) => ({
+          ...prev,
+          locationId: prev.locationId || response.data[0]?.id || ""
+        }));
+      } catch {
+        setError("Failed to load inventory locations.");
+      }
+    };
+    void loadInventoryLocations();
+  }, []);
+
+  useEffect(() => {
+    const loadAvailableParts = async () => {
+      if (activeOverlay !== "consume-parts" || !consumeForm.locationId) {
+        setAvailableInventoryParts([]);
+        return;
+      }
+      try {
+        const response = await api.get<InventoryAvailablePart[]>(
+          `/inventory/available-parts?locationId=${consumeForm.locationId}`
+        );
+        setAvailableInventoryParts(response.data);
+        setConsumeForm((prev) => ({
+          ...prev,
+          partId: response.data.some((item) => item.part_id === prev.partId)
+            ? prev.partId
+            : response.data[0]?.part_id || ""
+        }));
+      } catch {
+        setAvailableInventoryParts([]);
+      }
+    };
+    void loadAvailableParts();
+  }, [activeOverlay, consumeForm.locationId]);
 
   const createMaterial = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -373,6 +434,30 @@ export const WorkOrderDetailPage = () => {
       await loadDetails(id, false);
     } catch {
       setError("Upload failed. Check file type/size limits.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const consumeInventoryPart = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!id || !canCreateLaborOrAttachments) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await api.post(`/inventory/work-orders/${id}/consume`, {
+        partId: consumeForm.partId,
+        locationId: consumeForm.locationId,
+        quantity: Number(consumeForm.quantity)
+      });
+      setConsumeForm((prev) => ({
+        ...prev,
+        quantity: "1"
+      }));
+      setActiveOverlay(null);
+      await loadDetails(id, false);
+    } catch {
+      setError("Could not consume inventory part. Check selected quantity and location stock.");
     } finally {
       setSaving(false);
     }
@@ -684,8 +769,43 @@ export const WorkOrderDetailPage = () => {
               <button type="button" className="rounded bg-fsm-accent text-white px-4 py-2 text-sm hover:bg-fsm-accentDark disabled:opacity-50" onClick={() => setActiveOverlay("labor")} disabled={!canCreateLaborOrAttachments}>Add Labor</button>
               <button type="button" className="rounded bg-fsm-accent text-white px-4 py-2 text-sm hover:bg-fsm-accentDark disabled:opacity-50" onClick={() => setActiveOverlay("vendor")} disabled={!canManageCosts}>Add Vendor Invoice</button>
               <button type="button" className="rounded bg-fsm-accent text-white px-4 py-2 text-sm hover:bg-fsm-accentDark disabled:opacity-50" onClick={() => setActiveOverlay("attachment")} disabled={!canCreateLaborOrAttachments}>Add Attachments</button>
+              <button type="button" className="rounded bg-fsm-accent text-white px-4 py-2 text-sm hover:bg-fsm-accentDark disabled:opacity-50" onClick={() => setActiveOverlay("consume-parts")} disabled={!canCreateLaborOrAttachments}>Consume Parts</button>
               <button type="button" className="rounded bg-fsm-accent text-white px-4 py-2 text-sm hover:bg-fsm-accentDark disabled:opacity-50" onClick={() => setActiveOverlay("reassign")} disabled={!canManageCosts}>Reassign Cost</button>
             </div>
+          </section>
+
+          <section className="rounded-2xl bg-fsm-panel shadow p-6">
+            <h2 className="text-xl font-semibold mb-3">Parts Consumed</h2>
+            {consumedParts.length === 0 ? (
+              <p className="text-slate-600">No parts consumed yet.</p>
+            ) : (
+              <div className="overflow-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="text-left border-b">
+                      <th className="py-2 pr-3">Part #</th>
+                      <th className="py-2 pr-3">Part Name</th>
+                      <th className="py-2 pr-3">Location</th>
+                      <th className="py-2 pr-3">Qty</th>
+                      <th className="py-2 pr-3">Consumed By</th>
+                      <th className="py-2 pr-3">Created</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {consumedParts.map((item) => (
+                      <tr key={item.id} className="border-b last:border-0">
+                        <td className="py-2 pr-3">{item.part_number}</td>
+                        <td className="py-2 pr-3">{item.part_name}</td>
+                        <td className="py-2 pr-3">{item.location_name}</td>
+                        <td className="py-2 pr-3">{item.quantity}</td>
+                        <td className="py-2 pr-3">{item.consumed_by_name ?? "Unknown User"}</td>
+                        <td className="py-2 pr-3">{new Date(item.created_at).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </section>
 
           <section className="rounded-2xl bg-fsm-panel shadow p-6">
@@ -795,6 +915,7 @@ export const WorkOrderDetailPage = () => {
                     {activeOverlay === "labor" && "Add Labor"}
                     {activeOverlay === "vendor" && "Add Vendor Invoice"}
                     {activeOverlay === "attachment" && "Add Attachments"}
+                    {activeOverlay === "consume-parts" && "Consume Inventory Parts"}
                     {activeOverlay === "status" && "Update Status"}
                     {activeOverlay === "reassign" && "Reassign Cost"}
                   </h3>
@@ -845,6 +966,56 @@ export const WorkOrderDetailPage = () => {
                     <input className="rounded border px-3 py-2 w-full bg-slate-50" value={workOrder ? `WO-${workOrder.wo_number} | ${workOrder.title}` : ""} readOnly />
                     <input type="file" className="rounded border px-3 py-2 w-full" onChange={(e) => setFile(e.target.files?.[0] ?? null)} required />
                     <button type="submit" disabled={saving || !file} className="rounded bg-fsm-accent text-white px-4 py-2 text-sm hover:bg-fsm-accentDark disabled:opacity-50">{saving ? "Uploading..." : "Upload Attachment"}</button>
+                  </form>
+                )}
+
+                {activeOverlay === "consume-parts" && (
+                  <form className="space-y-3" onSubmit={consumeInventoryPart}>
+                    <select
+                      className="rounded border px-3 py-2 w-full"
+                      value={consumeForm.locationId}
+                      onChange={(e) =>
+                        setConsumeForm((prev) => ({ ...prev, locationId: e.target.value, partId: "" }))
+                      }
+                      required
+                    >
+                      <option value="">Select Warehouse / Van</option>
+                      {inventoryLocations.map((location) => (
+                        <option key={location.id} value={location.id}>
+                          {location.name} ({location.location_type === "WAREHOUSE" ? "Warehouse" : "Van"})
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      className="rounded border px-3 py-2 w-full"
+                      value={consumeForm.partId}
+                      onChange={(e) => setConsumeForm((prev) => ({ ...prev, partId: e.target.value }))}
+                      required
+                      disabled={!consumeForm.locationId}
+                    >
+                      <option value="">Select Part</option>
+                      {availableInventoryParts.map((part) => (
+                        <option key={part.part_id} value={part.part_id}>
+                          {part.part_number} | {part.part_name} (Available: {part.quantity})
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      className="rounded border px-3 py-2 w-full"
+                      value={consumeForm.quantity}
+                      onChange={(e) => setConsumeForm((prev) => ({ ...prev, quantity: e.target.value }))}
+                      required
+                    />
+                    <button
+                      type="submit"
+                      disabled={saving || !consumeForm.partId}
+                      className="rounded bg-fsm-accent text-white px-4 py-2 text-sm hover:bg-fsm-accentDark disabled:opacity-50"
+                    >
+                      {saving ? "Saving..." : "Save Consumed Part"}
+                    </button>
                   </form>
                 )}
 

@@ -9,6 +9,7 @@ import {
   BellIcon,
   DashboardIcon,
   FacilityIcon,
+  InventoryIcon,
   PublicIcon,
   ReportsIcon,
   RequestIcon,
@@ -178,6 +179,14 @@ export const AppShell = ({ title, children }: AppShellProps) => {
                   activePath={location.pathname}
                   icon={<AttachmentIcon size={19} />}
                   label="Attachments"
+                />
+              )}
+              {hasPageAccess(user, "inventory") && (
+                <NavItem
+                  to="/inventory"
+                  activePath={location.pathname}
+                  icon={<InventoryIcon size={19} />}
+                  label="Inventory"
                 />
               )}
               {isAdmin && hasPageAccess(user, "admin-users") && (

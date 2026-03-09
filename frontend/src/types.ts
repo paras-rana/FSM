@@ -9,6 +9,7 @@ export type PageAccessKey =
   | "theme-templates"
   | "facilities"
   | "attachments"
+  | "inventory"
   | "notifications"
   | "admin-users";
 
@@ -133,6 +134,66 @@ export type WorkOrderNote = {
   note: string;
   created_by: string;
   created_by_name?: string | null;
+  created_at: string;
+};
+
+export type InventoryLocation = {
+  id: string;
+  name: string;
+  location_type: "WAREHOUSE" | "VAN";
+  created_at: string;
+};
+
+export type InventoryListItem = {
+  part_id: string;
+  part_number: string;
+  part_name: string;
+  location_id: string;
+  location_name: string;
+  location_type: "WAREHOUSE" | "VAN";
+  quantity: number;
+};
+
+export type InventoryAvailablePart = {
+  part_id: string;
+  part_number: string;
+  part_name: string;
+  quantity: number;
+};
+
+export type InventoryTransactionItem = {
+  id: string;
+  transaction_type: "PURCHASE" | "TRANSFER" | "CONSUME";
+  part_id: string;
+  part_number: string;
+  part_name: string;
+  from_location_id?: string | null;
+  from_location_name?: string | null;
+  from_location_type?: "WAREHOUSE" | "VAN" | null;
+  to_location_id?: string | null;
+  to_location_name?: string | null;
+  to_location_type?: "WAREHOUSE" | "VAN" | null;
+  quantity: number;
+  work_order_id?: string | null;
+  work_order_number?: number | null;
+  note: string;
+  created_by: string;
+  created_by_name?: string | null;
+  created_at: string;
+};
+
+export type WorkOrderConsumedPart = {
+  id: string;
+  work_order_id: string;
+  part_id: string;
+  part_number: string;
+  part_name: string;
+  location_id: string;
+  location_name: string;
+  location_type: "WAREHOUSE" | "VAN";
+  quantity: number;
+  consumed_by: string;
+  consumed_by_name?: string | null;
   created_at: string;
 };
 
