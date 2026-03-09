@@ -75,6 +75,7 @@ CREATE TABLE IF NOT EXISTS work_orders (
   status TEXT NOT NULL DEFAULT 'CREATED',
   lead_technician_id VARCHAR(25) NULL REFERENCES users(id),
   service_request_id VARCHAR(25) NULL REFERENCES service_requests(id),
+  closed_at TIMESTAMPTZ NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT chk_work_orders_status CHECK (
@@ -84,6 +85,7 @@ CREATE TABLE IF NOT EXISTS work_orders (
       'IN_PROGRESS',
       'WAITING_FOR_PARTS',
       'COMPLETED',
+      'CHECKED_AND_CLOSED',
       'REOPENED',
       'ARCHIVED'
     )
@@ -190,7 +192,23 @@ ALTER TABLE service_requests
 
 ALTER TABLE work_orders
   ADD COLUMN IF NOT EXISTS facility_name TEXT NOT NULL DEFAULT 'HQ',
-  ADD COLUMN IF NOT EXISTS zone_name TEXT NULL;
+  ADD COLUMN IF NOT EXISTS zone_name TEXT NULL,
+  ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ NULL;
+
+ALTER TABLE work_orders DROP CONSTRAINT IF EXISTS chk_work_orders_status;
+ALTER TABLE work_orders
+  ADD CONSTRAINT chk_work_orders_status CHECK (
+    status IN (
+      'CREATED',
+      'ASSIGNED',
+      'IN_PROGRESS',
+      'WAITING_FOR_PARTS',
+      'COMPLETED',
+      'CHECKED_AND_CLOSED',
+      'REOPENED',
+      'ARCHIVED'
+    )
+  );
 
 ALTER TABLE facilities
   ADD COLUMN IF NOT EXISTS city TEXT NOT NULL DEFAULT '',

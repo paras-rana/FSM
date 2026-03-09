@@ -1,13 +1,15 @@
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { AppShell } from "../components/AppShell";
 import { api } from "../modules/api/client";
 import { useAuth } from "../modules/auth/AuthContext";
 import { hasAnyRole } from "../modules/auth/roles";
+import { formatStatusLabel } from "../modules/status/format";
 import type { ServiceRequest } from "../types";
 
 export const ServiceRequestDetailPage = () => {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [item, setItem] = useState<ServiceRequest | null>(null);
   const [loading, setLoading] = useState(true);
@@ -42,8 +44,8 @@ export const ServiceRequestDetailPage = () => {
     setConverting(true);
     setError(null);
     try {
-      await api.post(`/service-requests/${id}/convert-to-wo`);
-      await load();
+      const response = await api.post<{ id: string }>(`/service-requests/${id}/convert-to-wo`);
+      navigate(`/work-orders/${response.data.id}`);
     } catch {
       setError("Conversion failed. Request may already be converted.");
     } finally {
@@ -74,7 +76,7 @@ export const ServiceRequestDetailPage = () => {
                   <strong>Contact:</strong> {item.contact_info}
                 </p>
                 <p>
-                  <strong>Status:</strong> {item.status}
+                  <strong>Status:</strong> {formatStatusLabel(item.status)}
                 </p>
                 <p>
                   <strong>Urgency:</strong> {item.urgency}

@@ -6,26 +6,29 @@
 
 :root {
   font-family: "Poppins", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-  --fsm-bg: 245 247 250;
+  --fsm-bg: 236 253 245;
   --fsm-panel: 255 255 255;
-  --fsm-ink: 30 41 59;
-  --fsm-ink-muted: 100 116 139;
-  --fsm-border: 203 213 225;
-  --fsm-accent: 37 99 235;
-  --fsm-accent-dark: 29 78 216;
-  --fsm-blue-soft: 241 245 249;
-  --fsm-blue-soft-hover: 226 232 240;
-  --fsm-blue-soft-2: 248 250 252;
-  --fsm-blue-soft-3: 239 246 255;
-  --fsm-red-soft: 254 242 242;
-  --fsm-red-soft-hover: 254 226 226;
-  --fsm-red-accent: 220 38 38;
+  --fsm-ink: 15 23 42;
+  --fsm-ink-muted: 71 85 105;
+  --fsm-border: 167 243 208;
+  --fsm-accent: 14 165 233;
+  --fsm-accent-dark: 3 105 161;
+  --fsm-blue-soft: 224 242 254;
+  --fsm-blue-soft-hover: 186 230 253;
+  --fsm-blue-soft-2: 240 253 250;
+  --fsm-blue-soft-3: 220 252 231;
+  --fsm-red-soft: 255 237 213;
+  --fsm-red-soft-hover: 254 215 170;
+  --fsm-red-accent: 234 88 12;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
-  background: #ffffff;
+  background:
+    radial-gradient(circle at 8% 8%, rgb(253 230 138 / 0.45), transparent 42%),
+    radial-gradient(circle at 85% 0%, rgb(56 189 248 / 0.35), transparent 36%),
+    linear-gradient(170deg, rgb(240 253 250) 0%, rgb(236 253 245) 52%, rgb(224 242 254) 100%);
   color: rgb(var(--fsm-ink));
 }
 
@@ -34,16 +37,28 @@ body {
 }
 
 button {
-  background-color: #e0f2fe !important;
-  color: #0369a1 !important;
-  border-color: #bae6fd !important;
+  transition: all 160ms ease;
 }
 
 button:hover {
-  background-color: #bae6fd !important;
+  transform: translateY(-1px);
 }
 
 button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+input,
+select,
+textarea {
+  transition: border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: rgb(var(--fsm-accent) / 0.8);
+  box-shadow: 0 0 0 3px rgb(var(--fsm-accent) / 0.18);
 }

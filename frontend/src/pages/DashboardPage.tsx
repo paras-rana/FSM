@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../modules/api/client";
 import type { DashboardSummary } from "../types";
 import { AppShell } from "../components/AppShell";
+import { formatStatusLabel } from "../modules/status/format";
 
 const formatWeekRange = (weekStartRaw: string): string => {
   const start = new Date(weekStartRaw);
@@ -120,7 +121,7 @@ export const DashboardPage = () => {
 
   const totalOpenWorkOrders =
     summary?.workOrdersByStatus
-      .filter((row) => !["COMPLETED", "ARCHIVED"].includes(row.status))
+      .filter((row) => !["CHECKED_AND_CLOSED", "ARCHIVED"].includes(row.status))
       .reduce((sum, row) => sum + Number(row.count || 0), 0) ?? 0;
   const totalNewServiceRequests = summary?.newServiceRequests.count ?? 0;
   const activeTechnicians =
@@ -138,7 +139,7 @@ export const DashboardPage = () => {
           <button
             type="button"
             className="rounded-xl border p-4 bg-white/60 text-left hover:bg-white/80 border-t-4 border-t-sky-500"
-            onClick={() => navigate("/work-orders?excludeStatus=COMPLETED,ARCHIVED")}
+            onClick={() => navigate("/work-orders?excludeStatus=CHECKED_AND_CLOSED,ARCHIVED")}
           >
             <p className="text-sm text-slate-600">Total Open Work Orders</p>
             <p className="text-2xl font-bold mt-1">{loading ? "-" : totalOpenWorkOrders}</p>
@@ -201,7 +202,7 @@ export const DashboardPage = () => {
             type="button"
             className="rounded-xl border p-4 bg-white/60 text-left hover:bg-white/80 border-t-4 border-t-rose-500"
             onClick={() =>
-              navigate("/work-orders?excludeStatus=COMPLETED,ARCHIVED&assignedOnly=true")
+              navigate("/work-orders?excludeStatus=CHECKED_AND_CLOSED,ARCHIVED&assignedOnly=true")
             }
           >
             <p className="text-sm text-slate-600">Active Technicians</p>
@@ -226,7 +227,7 @@ export const DashboardPage = () => {
                   className="w-full text-left rounded border bg-white/60 px-3 py-2 hover:bg-white/80"
                   onClick={() => navigate(`/work-orders?status=${row.status}`)}
                 >
-                  <span className="text-sm text-slate-600">{row.status}</span>
+                  <span className="text-sm text-slate-600">{formatStatusLabel(row.status)}</span>
                   <span className="float-right font-semibold">{row.count}</span>
                 </button>
               ))}
@@ -253,7 +254,7 @@ export const DashboardPage = () => {
                     const endExclusive = new Date(start);
                     endExclusive.setDate(start.getDate() + 7);
                     navigate(
-                      `/work-orders?status=COMPLETED,ARCHIVED&updatedFrom=${start
+                      `/work-orders?status=CHECKED_AND_CLOSED,ARCHIVED&updatedFrom=${start
                         .toISOString()
                         .slice(0, 10)}&updatedTo=${endExclusive.toISOString().slice(0, 10)}`
                     );

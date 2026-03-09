@@ -33,7 +33,7 @@ type ThemeField = {
 export const THEME_TEMPLATES_STORAGE_KEY = "fsm_theme_templates_v1";
 export const ACTIVE_THEME_STORAGE_KEY = "fsm_active_theme_v1";
 const THEME_VERSION_STORAGE_KEY = "fsm_theme_version_v1";
-const CURRENT_THEME_VERSION = "clean-white-default-v1";
+const CURRENT_THEME_VERSION = "modern-bold-v1";
 
 const LEGACY_DEFAULT_THEME_COLORS: ThemeColors = {
   bg: "#f8fbff",
@@ -53,30 +53,30 @@ const LEGACY_DEFAULT_THEME_COLORS: ThemeColors = {
 };
 
 export const THEME_FIELDS: ThemeField[] = [
-  { key: "bg", label: "Page Background", cssVar: "--fsm-bg", defaultHex: "#f5f7fa" },
+  { key: "bg", label: "Page Background", cssVar: "--fsm-bg", defaultHex: "#ecfdf5" },
   { key: "panel", label: "Panel Surface", cssVar: "--fsm-panel", defaultHex: "#ffffff" },
-  { key: "ink", label: "Primary Text", cssVar: "--fsm-ink", defaultHex: "#1e293b" },
-  { key: "inkMuted", label: "Muted Text", cssVar: "--fsm-ink-muted", defaultHex: "#64748b" },
-  { key: "border", label: "Borders", cssVar: "--fsm-border", defaultHex: "#cbd5e1" },
-  { key: "accent", label: "Primary Accent", cssVar: "--fsm-accent", defaultHex: "#2563eb" },
-  { key: "accentDark", label: "Primary Accent Dark", cssVar: "--fsm-accent-dark", defaultHex: "#1d4ed8" },
-  { key: "blueSoft", label: "Blue Surface 1", cssVar: "--fsm-blue-soft", defaultHex: "#f1f5f9" },
+  { key: "ink", label: "Primary Text", cssVar: "--fsm-ink", defaultHex: "#0f172a" },
+  { key: "inkMuted", label: "Muted Text", cssVar: "--fsm-ink-muted", defaultHex: "#475569" },
+  { key: "border", label: "Borders", cssVar: "--fsm-border", defaultHex: "#a7f3d0" },
+  { key: "accent", label: "Primary Accent", cssVar: "--fsm-accent", defaultHex: "#0ea5e9" },
+  { key: "accentDark", label: "Primary Accent Dark", cssVar: "--fsm-accent-dark", defaultHex: "#0369a1" },
+  { key: "blueSoft", label: "Blue Surface 1", cssVar: "--fsm-blue-soft", defaultHex: "#e0f2fe" },
   {
     key: "blueSoftHover",
     label: "Blue Surface Hover",
     cssVar: "--fsm-blue-soft-hover",
-    defaultHex: "#e2e8f0"
+    defaultHex: "#bae6fd"
   },
-  { key: "blueSoft2", label: "Blue Surface 2", cssVar: "--fsm-blue-soft-2", defaultHex: "#f8fafc" },
-  { key: "blueSoft3", label: "Blue Surface 3", cssVar: "--fsm-blue-soft-3", defaultHex: "#eff6ff" },
-  { key: "redSoft", label: "Secondary Red Soft", cssVar: "--fsm-red-soft", defaultHex: "#fef2f2" },
+  { key: "blueSoft2", label: "Blue Surface 2", cssVar: "--fsm-blue-soft-2", defaultHex: "#f0fdfa" },
+  { key: "blueSoft3", label: "Blue Surface 3", cssVar: "--fsm-blue-soft-3", defaultHex: "#dcfce7" },
+  { key: "redSoft", label: "Secondary Red Soft", cssVar: "--fsm-red-soft", defaultHex: "#ffedd5" },
   {
     key: "redSoftHover",
     label: "Secondary Red Hover",
     cssVar: "--fsm-red-soft-hover",
-    defaultHex: "#fee2e2"
+    defaultHex: "#fed7aa"
   },
-  { key: "redAccent", label: "Secondary Red Accent", cssVar: "--fsm-red-accent", defaultHex: "#dc2626" }
+  { key: "redAccent", label: "Secondary Red Accent", cssVar: "--fsm-red-accent", defaultHex: "#ea580c" }
 ];
 
 const normalizeHex = (value: string): string => {

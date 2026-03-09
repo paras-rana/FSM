@@ -6,6 +6,7 @@ import { createCuidLikeId } from "../utils/id";
 import { parseLimitOffset } from "../utils/http";
 import { addAuditLog } from "../utils/audit";
 import { canTransitionStatus, type WorkOrderStatus } from "../utils/work-order-status";
+import { hasAnyRole } from "../utils/roles";
 
 const createSchema = z.object({
   title: z.string().min(1),
@@ -29,9 +30,11 @@ const statusSchema = z.object({
     "IN_PROGRESS",
     "WAITING_FOR_PARTS",
     "COMPLETED",
+    "CHECKED_AND_CLOSED",
     "REOPENED",
     "ARCHIVED"
-  ])
+  ]),
+  leadTechnicianId: z.string().nullable().optional()
 });
 
 const noteCreateSchema = z.object({
@@ -280,7 +283,7 @@ workOrdersRouter.patch("/:id", authorize("MANAGER", "ADMIN"), async (req, res, n
   }
 });
 
-workOrdersRouter.post("/:id/status", authorize("MANAGER", "ADMIN"), async (req, res, next) => {
+workOrdersRouter.post("/:id/status", authorize("TECHNICIAN", "MANAGER", "ADMIN"), async (req, res, next) => {
   try {
     const parsed = statusSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -289,7 +292,7 @@ workOrdersRouter.post("/:id/status", authorize("MANAGER", "ADMIN"), async (req, 
     }
 
     const { rows } = await pool.query(
-      `SELECT id, status FROM work_orders WHERE id = $1`,
+      `SELECT id, status, lead_technician_id, closed_at FROM work_orders WHERE id = $1`,
       [req.params.id]
     );
     if (rows.length === 0) {
@@ -299,19 +302,79 @@ workOrdersRouter.post("/:id/status", authorize("MANAGER", "ADMIN"), async (req, 
 
     const current = rows[0].status as WorkOrderStatus;
     const nextStatus = parsed.data.status as WorkOrderStatus;
-    if (!canTransitionStatus(current, nextStatus)) {
+    const isManagerOrAdmin = hasAnyRole(req.user!.roles, ["MANAGER", "ADMIN"]);
+    const isSameAssignedReassignment =
+      current === "ASSIGNED" && nextStatus === "ASSIGNED" && isManagerOrAdmin;
+
+    if (!isSameAssignedReassignment && !canTransitionStatus(current, nextStatus)) {
       res.status(400).json({ message: `Invalid status transition ${current} -> ${nextStatus}` });
       return;
+    }
+    const isTechnicianOnly = !isManagerOrAdmin && hasAnyRole(req.user!.roles, ["TECHNICIAN"]);
+
+    let leadTechnicianId = (rows[0].lead_technician_id as string | null) ?? null;
+    if (parsed.data.leadTechnicianId !== undefined) {
+      if (!isManagerOrAdmin) {
+        res.status(403).json({ message: "Only managers/admins can assign technicians during status updates" });
+        return;
+      }
+      leadTechnicianId = parsed.data.leadTechnicianId;
+    }
+
+    if (isTechnicianOnly) {
+      if (!rows[0].lead_technician_id || rows[0].lead_technician_id !== req.user!.id) {
+        res.status(403).json({ message: "Technicians can only update statuses on their assigned work orders" });
+        return;
+      }
+      if (!["IN_PROGRESS", "WAITING_FOR_PARTS", "COMPLETED"].includes(nextStatus)) {
+        res.status(403).json({ message: "Technicians may only move work orders to In Progress, Waiting for Parts, or Completed" });
+        return;
+      }
+    }
+
+    if (nextStatus === "CHECKED_AND_CLOSED" || nextStatus === "ARCHIVED") {
+      if (!isManagerOrAdmin) {
+        res.status(403).json({ message: "Only managers/admins can close or archive work orders" });
+        return;
+      }
+    }
+
+    if (nextStatus === "ASSIGNED" || nextStatus === "REOPENED") {
+      if (!leadTechnicianId) {
+        res.status(400).json({ message: "Assigned and Reopened statuses require selecting a technician" });
+        return;
+      }
+      const techCheck = await pool.query(
+        `SELECT 1
+         FROM users u
+         JOIN user_roles ur ON ur.user_id = u.id
+         JOIN roles r ON r.id = ur.role_id
+         WHERE u.id = $1
+           AND r.name = 'TECHNICIAN'
+         LIMIT 1`,
+        [leadTechnicianId]
+      );
+      if (techCheck.rowCount === 0) {
+        res.status(400).json({ message: "Selected assigned technician is not valid" });
+        return;
+      }
     }
 
     const updated = await pool.query(
       `UPDATE work_orders
-       SET status = $2, updated_at = now()
+       SET status = $2,
+           lead_technician_id = $3,
+           closed_at = CASE
+             WHEN $2 = 'CHECKED_AND_CLOSED' THEN now()
+             WHEN $2 IN ('CREATED', 'ASSIGNED', 'IN_PROGRESS', 'WAITING_FOR_PARTS', 'COMPLETED', 'REOPENED') THEN NULL
+             ELSE closed_at
+           END,
+           updated_at = now()
        WHERE id = $1
        RETURNING id, wo_number, title, description, status, lead_technician_id, service_request_id, facility_name, zone_name, created_at, updated_at,
                  (SELECT full_name FROM users WHERE id = work_orders.lead_technician_id) AS lead_technician_name,
                  (SELECT sr_number FROM service_requests WHERE id = work_orders.service_request_id) AS service_request_number`,
-      [req.params.id, nextStatus]
+      [req.params.id, nextStatus, leadTechnicianId]
     );
 
     await addAuditLog({
@@ -329,13 +392,29 @@ workOrdersRouter.post("/:id/status", authorize("MANAGER", "ADMIN"), async (req, 
 
 workOrdersRouter.post("/:id/archive", authorize("MANAGER", "ADMIN"), async (req, res, next) => {
   try {
-    const { rows } = await pool.query(`SELECT id, status FROM work_orders WHERE id = $1`, [req.params.id]);
+    const { rows } = await pool.query(
+      `SELECT id, status, closed_at FROM work_orders WHERE id = $1`,
+      [req.params.id]
+    );
     if (rows.length === 0) {
       res.status(404).json({ message: "Work order not found" });
       return;
     }
-    if (rows[0].status !== "COMPLETED") {
-      res.status(400).json({ message: "Only completed work orders can be archived" });
+    if (rows[0].status !== "CHECKED_AND_CLOSED") {
+      res.status(400).json({ message: "Only Checked and Closed work orders can be archived" });
+      return;
+    }
+    if (!rows[0].closed_at) {
+      res.status(400).json({ message: "Work order does not have a closed date yet" });
+      return;
+    }
+    const closedAt = new Date(rows[0].closed_at as string);
+    const archiveAllowedAt = new Date(closedAt);
+    archiveAllowedAt.setDate(archiveAllowedAt.getDate() + 90);
+    if (archiveAllowedAt > new Date()) {
+      res.status(400).json({
+        message: `Work order can be archived on or after ${archiveAllowedAt.toISOString().slice(0, 10)}`
+      });
       return;
     }
 

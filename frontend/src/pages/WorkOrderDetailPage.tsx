@@ -5,6 +5,7 @@ import { PlusIcon } from "../components/Icons";
 import { api } from "../modules/api/client";
 import { useAuth } from "../modules/auth/AuthContext";
 import { hasAnyRole } from "../modules/auth/roles";
+import { formatStatusLabel } from "../modules/status/format";
 import type {
   AttachmentItem,
   CostTotals,
@@ -21,6 +22,7 @@ const statuses = [
   "IN_PROGRESS",
   "WAITING_FOR_PARTS",
   "COMPLETED",
+  "CHECKED_AND_CLOSED",
   "REOPENED",
   "ARCHIVED"
 ] as const;
@@ -118,6 +120,7 @@ export const WorkOrderDetailPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [activeOverlay, setActiveOverlay] = useState<OverlayType>(null);
   const [nextStatus, setNextStatus] = useState("");
+  const [statusLeadTechnicianId, setStatusLeadTechnicianId] = useState("");
   const [materialForm, setMaterialForm] = useState({
     description: "",
     quantity: "1",
@@ -152,10 +155,25 @@ export const WorkOrderDetailPage = () => {
     () => hasAnyRole(user?.roles, ["TECHNICIAN", "MANAGER", "ADMIN"]),
     [user?.roles]
   );
+  const isTechnician = useMemo(
+    () => hasAnyRole(user?.roles, ["TECHNICIAN"]),
+    [user?.roles]
+  );
   const isManagerOrAdmin = useMemo(
     () => hasAnyRole(user?.roles, ["MANAGER", "ADMIN"]),
     [user?.roles]
   );
+  const canTechnicianUpdateStatus = isTechnician && !!workOrder && workOrder.lead_technician_id === user?.id;
+  const canUpdateStatus = isManagerOrAdmin || canTechnicianUpdateStatus;
+  const statusOptions = useMemo(() => {
+    if (!workOrder) return [] as string[];
+    const managerOptions = statuses.filter(
+      (status) => status !== workOrder.status || (status === "ASSIGNED" && workOrder.status === "ASSIGNED")
+    );
+    if (isManagerOrAdmin) return managerOptions;
+    if (!canTechnicianUpdateStatus) return [] as string[];
+    return ["IN_PROGRESS", "WAITING_FOR_PARTS", "COMPLETED"].filter((status) => status !== workOrder.status);
+  }, [canTechnicianUpdateStatus, isManagerOrAdmin, workOrder]);
   const laborTotalHours = useMemo(
     () => labor.reduce((sum, entry) => sum + Number(entry.hours || 0), 0),
     [labor]
@@ -212,6 +230,7 @@ export const WorkOrderDetailPage = () => {
       ]);
       setWorkOrder(woRes.data);
       setNextStatus("");
+      setStatusLeadTechnicianId(woRes.data.lead_technician_id ?? "");
       setTotals(totalsRes.data);
       setMaterials(materialsRes.data);
       setVendorInvoices(vendorInvoicesRes.data);
@@ -379,12 +398,23 @@ export const WorkOrderDetailPage = () => {
   };
 
   const updateStatus = async () => {
-    if (!id || !isManagerOrAdmin || !nextStatus) return;
+    if (!id || !canUpdateStatus || !nextStatus) return;
+    if ((nextStatus === "ASSIGNED" || nextStatus === "REOPENED") && !statusLeadTechnicianId) {
+      setError("Please select an assigned technician before saving.");
+      return;
+    }
     setStatusSaving(true);
     setError(null);
     try {
-      await api.post(`/work-orders/${id}/status`, { status: nextStatus });
+      await api.post(`/work-orders/${id}/status`, {
+        status: nextStatus,
+        leadTechnicianId:
+          nextStatus === "ASSIGNED" || nextStatus === "REOPENED"
+            ? statusLeadTechnicianId
+            : undefined
+      });
       setNextStatus("");
+      setStatusLeadTechnicianId("");
       setActiveOverlay(null);
       await loadDetails(id, false);
     } catch (err: unknown) {
@@ -395,6 +425,12 @@ export const WorkOrderDetailPage = () => {
     } finally {
       setStatusSaving(false);
     }
+  };
+
+  const openStatusOverlay = () => {
+    setNextStatus("");
+    setStatusLeadTechnicianId(workOrder?.lead_technician_id ?? technicians[0]?.id ?? "");
+    setActiveOverlay("status");
   };
 
   const createNote = async (event: React.FormEvent) => {
@@ -535,7 +571,7 @@ export const WorkOrderDetailPage = () => {
 
       const html = `<h1>Work Order Detail Report</h1>
         <p class="meta">Work Order: ${escapeHtml(`WO-${workOrder.wo_number}`)} | ${escapeHtml(workOrder.title)}</p>
-        <p class="meta">Status: ${escapeHtml(workOrder.status)} | Facility: ${escapeHtml(workOrder.facility_name)}</p>
+        <p class="meta">Status: ${escapeHtml(formatStatusLabel(workOrder.status))} | Facility: ${escapeHtml(workOrder.facility_name)}</p>
         <p class="meta">Zone / Room: ${escapeHtml(workOrder.zone_name ?? "-")} | Lead Technician: ${escapeHtml(
           leadTechnicianLabel
         )}</p>
@@ -591,11 +627,11 @@ export const WorkOrderDetailPage = () => {
             <div className="text-right">
               <p className="text-xs text-slate-600 uppercase tracking-wide">Status</p>
               <div className="mt-1 flex items-center justify-end gap-2">
-                <p className="text-lg font-bold tracking-wide">{workOrder.status}</p>
-                {isManagerOrAdmin && (
+                <p className="text-lg font-bold tracking-wide">{formatStatusLabel(workOrder.status)}</p>
+                {canUpdateStatus && (
                   <button
                     type="button"
-                    onClick={() => setActiveOverlay("status")}
+                    onClick={openStatusOverlay}
                     className="inline-flex items-center gap-1 rounded bg-sky-100 text-sky-700 px-3 py-2 text-sm hover:bg-sky-200 disabled:opacity-50"
                   >
                     <PlusIcon size={14} />
@@ -821,27 +857,63 @@ export const WorkOrderDetailPage = () => {
                     }}
                   >
                     <p className="text-sm text-slate-600">
-                      Current Status: <span className="font-semibold text-fsm-ink">{workOrder.status}</span>
+                      Current Status: <span className="font-semibold text-fsm-ink">{formatStatusLabel(workOrder.status)}</span>
                     </p>
                     <select
                       className="rounded border px-3 py-2 w-full"
                       value={nextStatus}
-                      onChange={(e) => setNextStatus(e.target.value)}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setNextStatus(value);
+                        if (value === "ASSIGNED" || value === "REOPENED") {
+                          setStatusLeadTechnicianId(
+                            (prev) => prev || workOrder.lead_technician_id || technicians[0]?.id || ""
+                          );
+                        }
+                      }}
                       disabled={statusSaving}
                       required
                     >
                       <option value="">Select new status</option>
-                      {statuses
-                        .filter((status) => status !== workOrder.status)
+                      {statusOptions
                         .map((status) => (
                           <option key={status} value={status}>
-                            {status}
+                            {formatStatusLabel(status)}
                           </option>
                         ))}
                     </select>
+                    {isManagerOrAdmin && (nextStatus === "ASSIGNED" || nextStatus === "REOPENED") && (
+                      <label className="grid gap-1">
+                        <span className="text-sm text-slate-700">Assigned Technician</span>
+                        <select
+                          className="rounded border px-3 py-2 w-full"
+                          value={statusLeadTechnicianId}
+                          onChange={(e) => setStatusLeadTechnicianId(e.target.value)}
+                          disabled={statusSaving}
+                          required
+                        >
+                          <option value="">Select technician</option>
+                          {technicians.map((technician) => (
+                            <option key={technician.id} value={technician.id}>
+                              {technician.full_name} ({technician.email})
+                            </option>
+                          ))}
+                        </select>
+                        {technicians.length === 0 && (
+                          <span className="text-xs text-red-600">
+                            No technicians found. Add a technician user before assigning.
+                          </span>
+                        )}
+                      </label>
+                    )}
                     <button
                       type="submit"
-                      disabled={!nextStatus || statusSaving}
+                      disabled={
+                        !nextStatus ||
+                        statusSaving ||
+                        ((nextStatus === "ASSIGNED" || nextStatus === "REOPENED") &&
+                          (!statusLeadTechnicianId || technicians.length === 0))
+                      }
                       className="rounded bg-fsm-accent text-white px-4 py-2 text-sm hover:bg-fsm-accentDark disabled:opacity-50"
                     >
                       {statusSaving ? "Saving..." : "Save Status"}

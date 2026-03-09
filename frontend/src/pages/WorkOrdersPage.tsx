@@ -4,6 +4,7 @@ import { AppShell } from "../components/AppShell";
 import { api } from "../modules/api/client";
 import { useAuth } from "../modules/auth/AuthContext";
 import { hasAnyRole } from "../modules/auth/roles";
+import { formatStatusLabel } from "../modules/status/format";
 import type { Facility, WorkOrder } from "../types";
 
 const statuses = [
@@ -12,6 +13,7 @@ const statuses = [
   "IN_PROGRESS",
   "WAITING_FOR_PARTS",
   "COMPLETED",
+  "CHECKED_AND_CLOSED",
   "REOPENED",
   "ARCHIVED"
 ] as const;
@@ -142,7 +144,7 @@ export const WorkOrdersPage = () => {
       await api.post(`/work-orders/${workOrderId}/archive`);
       await load();
     } catch {
-      setError("Archive failed. Only completed work orders can be archived.");
+      setError("Archive failed. Work order must be Checked and Closed for at least 90 days.");
     }
   };
 
@@ -229,7 +231,7 @@ export const WorkOrdersPage = () => {
               <option value="">All Statuses</option>
               {statuses.map((status) => (
                 <option key={status} value={status}>
-                  {status}
+                  {formatStatusLabel(status)}
                 </option>
               ))}
             </select>
@@ -291,7 +293,7 @@ export const WorkOrdersPage = () => {
                     </td>
                     <td className="py-2 pr-4">{wo.facility_name}</td>
                     <td className="py-2 pr-4">{wo.zone_name ?? "-"}</td>
-                    <td className="py-2 pr-4">{wo.status}</td>
+                    <td className="py-2 pr-4">{formatStatusLabel(wo.status)}</td>
                     <td className="py-2 pr-4">{new Date(wo.created_at).toLocaleString()}</td>
                     {canManage && (
                       <td className="py-2 pr-4">

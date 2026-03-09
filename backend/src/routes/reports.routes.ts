@@ -97,7 +97,7 @@ reportsRouter.get("/dashboard", async (_req, res, next) => {
              date_trunc('week', COALESCE(updated_at, created_at))::date AS week_start,
              COUNT(*)::int AS closed_count
            FROM work_orders
-           WHERE status IN ('COMPLETED', 'ARCHIVED')
+           WHERE status IN ('CHECKED_AND_CLOSED', 'ARCHIVED')
            GROUP BY 1
          )
          SELECT w.week_start, COALESCE(c.closed_count, 0)::int AS closed_count
@@ -113,7 +113,7 @@ reportsRouter.get("/dashboard", async (_req, res, next) => {
          FROM work_orders wo
          JOIN users u ON u.id = wo.lead_technician_id
          WHERE wo.lead_technician_id IS NOT NULL
-           AND wo.status NOT IN ('COMPLETED', 'ARCHIVED')
+           AND wo.status NOT IN ('CHECKED_AND_CLOSED', 'ARCHIVED')
          GROUP BY u.id, u.full_name
          ORDER BY open_count DESC, u.full_name ASC`
       ),
@@ -126,7 +126,7 @@ reportsRouter.get("/dashboard", async (_req, res, next) => {
            FLOOR(EXTRACT(EPOCH FROM (NOW() - wo.created_at)) / 3600)::int AS duration_open_hours
          FROM work_orders wo
          LEFT JOIN users u ON u.id = wo.lead_technician_id
-         WHERE wo.status NOT IN ('COMPLETED', 'ARCHIVED')
+         WHERE wo.status NOT IN ('CHECKED_AND_CLOSED', 'ARCHIVED')
          ORDER BY wo.created_at ASC
          LIMIT 5`
       )

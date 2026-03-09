@@ -100,7 +100,27 @@ export const runBootstrapMigrations = async (): Promise<void> => {
   await pool.query(`
     ALTER TABLE work_orders
       ADD COLUMN IF NOT EXISTS facility_name TEXT NOT NULL DEFAULT 'HQ',
-      ADD COLUMN IF NOT EXISTS zone_name TEXT NULL
+      ADD COLUMN IF NOT EXISTS zone_name TEXT NULL,
+      ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ NULL
+  `);
+
+  await pool.query(`
+    ALTER TABLE work_orders DROP CONSTRAINT IF EXISTS chk_work_orders_status
+  `);
+  await pool.query(`
+    ALTER TABLE work_orders
+      ADD CONSTRAINT chk_work_orders_status CHECK (
+        status IN (
+          'CREATED',
+          'ASSIGNED',
+          'IN_PROGRESS',
+          'WAITING_FOR_PARTS',
+          'COMPLETED',
+          'CHECKED_AND_CLOSED',
+          'REOPENED',
+          'ARCHIVED'
+        )
+      )
   `);
 
   await pool.query(`

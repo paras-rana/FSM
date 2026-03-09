@@ -26,7 +26,7 @@ export const LoginPage = () => {
 
   return (
     <main className="min-h-screen p-4 md:p-6 lg:p-8">
-      <div className="min-h-[calc(100vh-2rem)] md:min-h-[calc(100vh-3rem)] lg:min-h-[calc(100vh-4rem)] overflow-hidden rounded-3xl border border-white/30 bg-white/20 shadow-2xl backdrop-blur-sm lg:grid lg:grid-cols-[minmax(0,1fr)_460px]">
+      <div className="min-h-[calc(100vh-2rem)] md:min-h-[calc(100vh-3rem)] lg:min-h-[calc(100vh-4rem)] overflow-hidden rounded-3xl border border-cyan-200/70 bg-white/25 shadow-2xl backdrop-blur-sm lg:grid lg:grid-cols-[minmax(0,1fr)_460px]">
         <section
           className="relative hidden lg:flex"
           style={{
@@ -47,8 +47,8 @@ export const LoginPage = () => {
           </div>
         </section>
 
-        <section className="flex items-center justify-center p-6 md:p-10 bg-fsm-panel/95">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200/80 bg-white p-8 shadow-xl">
+        <section className="flex items-center justify-center p-6 md:p-10 bg-fsm-panel/85">
+          <div className="w-full max-w-md rounded-2xl border border-cyan-200/70 bg-white p-8 shadow-xl">
             <h1 className="text-2xl font-bold">FSM Login</h1>
             <p className="text-slate-600 mt-2">Sign in to access your dashboard.</p>
 
@@ -80,7 +80,7 @@ export const LoginPage = () => {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full rounded-lg bg-fsm-accent text-white py-2 font-semibold hover:bg-fsm-accentDark disabled:opacity-50"
+                className="w-full rounded-lg bg-gradient-to-r from-cyan-500 to-emerald-500 text-white py-2 font-semibold hover:from-cyan-600 hover:to-emerald-600 disabled:opacity-50"
               >
                 {loading ? "Signing in..." : "Sign In"}
               </button>

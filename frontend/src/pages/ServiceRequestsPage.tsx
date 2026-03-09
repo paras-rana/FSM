@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { AppShell } from "../components/AppShell";
 import { api } from "../modules/api/client";
 import { useAuth } from "../modules/auth/AuthContext";
 import { hasAnyRole } from "../modules/auth/roles";
+import { formatStatusLabel } from "../modules/status/format";
 import type { ServiceRequest } from "../types";
 
 export const ServiceRequestsPage = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [items, setItems] = useState<ServiceRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,8 +44,8 @@ export const ServiceRequestsPage = () => {
     if (!canConvert) return;
     setError(null);
     try {
-      await api.post(`/service-requests/${id}/convert-to-wo`);
-      await load();
+      const response = await api.post<{ id: string }>(`/service-requests/${id}/convert-to-wo`);
+      navigate(`/work-orders/${response.data.id}`);
     } catch {
       setError("Conversion failed. Request may already be converted.");
     }
@@ -96,7 +98,7 @@ export const ServiceRequestsPage = () => {
                     <td className="py-2 pr-4">{sr.urgency}</td>
                     <td className="py-2 pr-4">{sr.contact_info}</td>
                     <td className="py-2 pr-4">{sr.description}</td>
-                    <td className="py-2 pr-4">{sr.status}</td>
+                    <td className="py-2 pr-4">{formatStatusLabel(sr.status)}</td>
                     <td className="py-2 pr-4">{new Date(sr.created_at).toLocaleString()}</td>
                     {canConvert && (
                       <td className="py-2 pr-4">
