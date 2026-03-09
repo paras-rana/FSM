@@ -127,6 +127,15 @@ export type AttachmentItem = {
   created_at: string;
 };
 
+export type WorkOrderNote = {
+  id: string;
+  work_order_id: string;
+  note: string;
+  created_by: string;
+  created_by_name?: string | null;
+  created_at: string;
+};
+
 export type WorkOrderStatusCount = {
   status: string;
   count: number;

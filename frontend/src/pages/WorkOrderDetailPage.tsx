@@ -11,7 +11,8 @@ import type {
   LaborEntry,
   MaterialItem,
   VendorInvoiceItem,
-  WorkOrder
+  WorkOrder,
+  WorkOrderNote
 } from "../types";
 
 const statuses = [
@@ -26,6 +27,49 @@ const statuses = [
 
 const currency = (value: number): string =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(value || 0));
+const escapeHtml = (value: unknown): string =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+const createReportWindow = () => {
+  const popup = window.open("about:blank", "_blank");
+  if (!popup) {
+    throw new Error("Popup blocked. Allow popups to generate the PDF report.");
+  }
+  popup.opener = null;
+  return popup;
+};
+
+const renderReportWindow = (popup: Window, title: string, bodyHtml: string) => {
+  popup.document.write(`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>${escapeHtml(title)}</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 24px; color: #0f172a; }
+      h1 { margin: 0 0 12px; font-size: 22px; }
+      h2 { margin: 18px 0 8px; font-size: 16px; }
+      p { margin: 4px 0; }
+      table { width: 100%; border-collapse: collapse; margin: 8px 0 18px; font-size: 12px; }
+      th, td { border: 1px solid #cbd5e1; text-align: left; padding: 6px; vertical-align: top; }
+      th { background: #f1f5f9; }
+      .meta { margin-bottom: 10px; color: #334155; }
+    </style>
+  </head>
+  <body>
+    ${bodyHtml}
+  </body>
+</html>`);
+  popup.document.close();
+  popup.focus();
+  setTimeout(() => popup.print(), 250);
+};
+
 const formatSize = (bytes: number): string => {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -39,7 +83,14 @@ type TechnicianOption = {
   email: string;
 };
 
-type OverlayType = "material" | "labor" | "vendor" | "attachment" | "status" | null;
+type OverlayType = "material" | "labor" | "vendor" | "attachment" | "status" | "reassign" | null;
+type ReassignCostType = "material" | "vendor";
+type ReassignCostOption = {
+  key: string;
+  id: string;
+  type: ReassignCostType;
+  label: string;
+};
 type ActivityRow = {
   id: string;
   type: "Material Cost" | "Vendor Cost" | "Labor" | "Attachment";
@@ -57,7 +108,9 @@ export const WorkOrderDetailPage = () => {
   const [labor, setLabor] = useState<LaborEntry[]>([]);
   const [materials, setMaterials] = useState<MaterialItem[]>([]);
   const [vendorInvoices, setVendorInvoices] = useState<VendorInvoiceItem[]>([]);
+  const [workOrderOptions, setWorkOrderOptions] = useState<WorkOrder[]>([]);
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
+  const [notes, setNotes] = useState<WorkOrderNote[]>([]);
   const [technicians, setTechnicians] = useState<TechnicianOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -83,6 +136,13 @@ export const WorkOrderDetailPage = () => {
     entryDate: today
   });
   const [file, setFile] = useState<File | null>(null);
+  const [newNote, setNewNote] = useState("");
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [reassignForm, setReassignForm] = useState({
+    costKey: "",
+    toWorkOrderId: "",
+    reason: ""
+  });
 
   const canManageCosts = useMemo(
     () => hasAnyRole(user?.roles, ["MANAGER", "ADMIN"]),
@@ -117,18 +177,38 @@ export const WorkOrderDetailPage = () => {
     workOrder?.lead_technician_id,
     workOrder?.lead_technician_name
   );
+  const reassignCostOptions = useMemo<ReassignCostOption[]>(() => {
+    const materialOptions = materials.map((item) => ({
+      key: `material:${item.id}`,
+      id: item.id,
+      type: "material" as const,
+      label: `Material | ${new Date(item.created_at).toLocaleDateString()} | ${item.description} | ${currency(
+        Number(item.total)
+      )}`
+    }));
+    const vendorOptions = vendorInvoices.map((item) => ({
+      key: `vendor:${item.id}`,
+      id: item.id,
+      type: "vendor" as const,
+      label: `Vendor | ${new Date(item.created_at).toLocaleDateString()} | ${item.vendor_name} | Inv ${item.invoice_number} | ${currency(
+        Number(item.total)
+      )}`
+    }));
+    return [...materialOptions, ...vendorOptions];
+  }, [materials, vendorInvoices]);
 
   const loadDetails = async (workOrderId: string, showLoading = true) => {
     if (showLoading) setLoading(true);
     setError(null);
     try {
-      const [woRes, totalsRes, materialsRes, vendorInvoicesRes, laborRes, uploadsRes] = await Promise.all([
+      const [woRes, totalsRes, materialsRes, vendorInvoicesRes, laborRes, uploadsRes, notesRes] = await Promise.all([
         api.get<WorkOrder>(`/work-orders/${workOrderId}`),
         api.get<CostTotals>(`/costs/totals?workOrderId=${workOrderId}`),
         api.get<MaterialItem[]>(`/costs/materials?workOrderId=${workOrderId}`),
         api.get<VendorInvoiceItem[]>(`/costs/vendor-invoices?workOrderId=${workOrderId}`),
         api.get<LaborEntry[]>(`/labor-entries?workOrderId=${workOrderId}&limit=200`),
-        api.get<AttachmentItem[]>(`/uploads?entityType=WORK_ORDER&entityId=${workOrderId}&limit=200`)
+        api.get<AttachmentItem[]>(`/uploads?entityType=WORK_ORDER&entityId=${workOrderId}&limit=200`),
+        api.get<WorkOrderNote[]>(`/work-orders/${workOrderId}/notes`)
       ]);
       setWorkOrder(woRes.data);
       setNextStatus("");
@@ -137,6 +217,7 @@ export const WorkOrderDetailPage = () => {
       setVendorInvoices(vendorInvoicesRes.data);
       setLabor(laborRes.data);
       setAttachments(uploadsRes.data);
+      setNotes(notesRes.data);
     } catch {
       setError("Failed to load work order details.");
     } finally {
@@ -155,6 +236,19 @@ export const WorkOrderDetailPage = () => {
     };
     void load();
   }, [id]);
+
+  useEffect(() => {
+    const loadWorkOrderOptions = async () => {
+      if (!canManageCosts) return;
+      try {
+        const response = await api.get<WorkOrder[]>("/work-orders?limit=500");
+        setWorkOrderOptions(response.data);
+      } catch {
+        setError("Failed to load work order options.");
+      }
+    };
+    void loadWorkOrderOptions();
+  }, [canManageCosts]);
 
   useEffect(() => {
     const loadTechnicians = async () => {
@@ -303,6 +397,64 @@ export const WorkOrderDetailPage = () => {
     }
   };
 
+  const createNote = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!id) return;
+    const note = newNote.trim();
+    if (!note) return;
+    setNoteSaving(true);
+    setError(null);
+    try {
+      const response = await api.post<WorkOrderNote>(`/work-orders/${id}/notes`, { note });
+      setNotes((prev) => [response.data, ...prev]);
+      setNewNote("");
+    } catch {
+      setError("Failed to add note.");
+    } finally {
+      setNoteSaving(false);
+    }
+  };
+
+  const reassignCost = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!id || !canManageCosts || !reassignForm.costKey || !reassignForm.toWorkOrderId) return;
+
+    const [type, costId] = reassignForm.costKey.split(":");
+    if (!costId || (type !== "material" && type !== "vendor")) {
+      setError("Invalid cost selection.");
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    try {
+      if (type === "material") {
+        await api.post("/costs/materials/reassign", {
+          materialId: costId,
+          toWorkOrderId: reassignForm.toWorkOrderId,
+          reason: reassignForm.reason.trim() || undefined
+        });
+      } else {
+        await api.post("/costs/vendor-invoices/reassign", {
+          vendorInvoiceId: costId,
+          toWorkOrderId: reassignForm.toWorkOrderId,
+          reason: reassignForm.reason.trim() || undefined
+        });
+      }
+
+      setReassignForm({ costKey: "", toWorkOrderId: "", reason: "" });
+      setActiveOverlay(null);
+      await loadDetails(id, false);
+    } catch (err: unknown) {
+      const message =
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ??
+        "Failed to reassign cost.";
+      setError(message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const activityRows = useMemo<ActivityRow[]>(() => {
     const materialRows: ActivityRow[] = materials.map((item) => ({
       id: `m-${item.id}`,
@@ -339,7 +491,93 @@ export const WorkOrderDetailPage = () => {
   }, [attachments, labor, materials, vendorInvoices]);
 
   const generatePdfReport = () => {
-    window.print();
+    if (!workOrder || !totals) return;
+    setError(null);
+    try {
+      const materialRows = materials
+        .map(
+          (item) =>
+            `<tr><td>${escapeHtml(new Date(item.created_at).toLocaleString())}</td><td>${escapeHtml(
+              item.description
+            )}</td><td>${Number(item.quantity).toFixed(3)}</td><td>${currency(Number(item.unit_cost))}</td><td>${currency(
+              Number(item.tax)
+            )}</td><td>${currency(Number(item.total))}</td></tr>`
+        )
+        .join("");
+      const vendorRows = vendorInvoices
+        .map(
+          (item) =>
+            `<tr><td>${escapeHtml(new Date(item.created_at).toLocaleString())}</td><td>${escapeHtml(
+              item.vendor_name
+            )}</td><td>${escapeHtml(item.invoice_number)}</td><td>${currency(Number(item.subtotal))}</td><td>${currency(
+              Number(item.tax)
+            )}</td><td>${currency(Number(item.total))}</td></tr>`
+        )
+        .join("");
+      const laborRows = labor
+        .map(
+          (entry) =>
+            `<tr><td>${escapeHtml(entry.entry_date)}</td><td>${escapeHtml(
+              resolveTechnicianLabel(entry.technician_id, entry.technician_name)
+            )}</td><td>${escapeHtml(entry.entry_type)}</td><td>${Number(entry.hours).toFixed(2)}</td><td>${escapeHtml(
+              new Date(entry.created_at).toLocaleString()
+            )}</td></tr>`
+        )
+        .join("");
+      const attachmentRows = attachments
+        .map(
+          (item) =>
+            `<tr><td>${escapeHtml(new Date(item.created_at).toLocaleString())}</td><td>${escapeHtml(
+              item.original_file_name
+            )}</td><td>${escapeHtml(item.mime_type)}</td><td>${escapeHtml(formatSize(item.file_size))}</td></tr>`
+        )
+        .join("");
+
+      const html = `<h1>Work Order Detail Report</h1>
+        <p class="meta">Work Order: ${escapeHtml(`WO-${workOrder.wo_number}`)} | ${escapeHtml(workOrder.title)}</p>
+        <p class="meta">Status: ${escapeHtml(workOrder.status)} | Facility: ${escapeHtml(workOrder.facility_name)}</p>
+        <p class="meta">Zone / Room: ${escapeHtml(workOrder.zone_name ?? "-")} | Lead Technician: ${escapeHtml(
+          leadTechnicianLabel
+        )}</p>
+        <p class="meta">Created: ${escapeHtml(
+          new Date(workOrder.created_at).toLocaleString()
+        )} | Updated: ${escapeHtml(
+          workOrder.updated_at ? new Date(workOrder.updated_at).toLocaleString() : "-"
+        )}</p>
+        <p class="meta">Description: ${escapeHtml(workOrder.description)}</p>
+        <h2>Cost Summary</h2>
+        <p class="meta">Material Subtotal: ${currency(Number(totals.material.subtotal))}</p>
+        <p class="meta">Material Tax: ${currency(Number(totals.material.tax))}</p>
+        <p class="meta">Material Total: ${currency(Number(totals.material.total))}</p>
+        <p class="meta">Vendor Subtotal: ${currency(Number(totals.vendor.subtotal))}</p>
+        <p class="meta">Vendor Tax: ${currency(Number(totals.vendor.tax))}</p>
+        <p class="meta">Vendor Total: ${currency(Number(totals.vendor.total))}</p>
+        <p class="meta">Combined Total: ${currency(Number(totals.combined.total))}</p>
+        <h2>Labor Summary</h2>
+        <p class="meta">Total Labor Hours: ${laborTotalHours.toFixed(2)}</p>
+        <h2>Material Cost Detail</h2>
+        <table><thead><tr><th>Created</th><th>Description</th><th>Qty</th><th>Unit Cost</th><th>Tax</th><th>Total</th></tr></thead><tbody>${
+          materialRows || '<tr><td colspan="6">No material entries.</td></tr>'
+        }</tbody></table>
+        <h2>Vendor Invoice Detail</h2>
+        <table><thead><tr><th>Created</th><th>Vendor</th><th>Invoice #</th><th>Subtotal</th><th>Tax</th><th>Total</th></tr></thead><tbody>${
+          vendorRows || '<tr><td colspan="6">No vendor invoice entries.</td></tr>'
+        }</tbody></table>
+        <h2>Labor Detail</h2>
+        <table><thead><tr><th>Entry Date</th><th>Technician</th><th>Type</th><th>Hours</th><th>Created</th></tr></thead><tbody>${
+          laborRows || '<tr><td colspan="5">No labor entries.</td></tr>'
+        }</tbody></table>
+        <h2>Attachment Detail</h2>
+        <table><thead><tr><th>Uploaded</th><th>File Name</th><th>MIME Type</th><th>Size</th></tr></thead><tbody>${
+          attachmentRows || '<tr><td colspan="4">No attachments.</td></tr>'
+        }</tbody></table>`;
+
+      const popup = createReportWindow();
+      renderReportWindow(popup, `WO-${workOrder.wo_number} Detail Report`, html);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to generate PDF report.";
+      setError(message);
+    }
   };
 
   return (
@@ -410,6 +648,7 @@ export const WorkOrderDetailPage = () => {
               <button type="button" className="rounded bg-fsm-accent text-white px-4 py-2 text-sm hover:bg-fsm-accentDark disabled:opacity-50" onClick={() => setActiveOverlay("labor")} disabled={!canCreateLaborOrAttachments}>Add Labor</button>
               <button type="button" className="rounded bg-fsm-accent text-white px-4 py-2 text-sm hover:bg-fsm-accentDark disabled:opacity-50" onClick={() => setActiveOverlay("vendor")} disabled={!canManageCosts}>Add Vendor Invoice</button>
               <button type="button" className="rounded bg-fsm-accent text-white px-4 py-2 text-sm hover:bg-fsm-accentDark disabled:opacity-50" onClick={() => setActiveOverlay("attachment")} disabled={!canCreateLaborOrAttachments}>Add Attachments</button>
+              <button type="button" className="rounded bg-fsm-accent text-white px-4 py-2 text-sm hover:bg-fsm-accentDark disabled:opacity-50" onClick={() => setActiveOverlay("reassign")} disabled={!canManageCosts}>Reassign Cost</button>
             </div>
           </section>
 
@@ -454,6 +693,43 @@ export const WorkOrderDetailPage = () => {
           </section>
 
           <section className="rounded-2xl bg-fsm-panel shadow p-6">
+            <h2 className="text-xl font-semibold mb-3">Notes</h2>
+            <form onSubmit={createNote} className="flex items-start gap-2 mb-3">
+              <textarea
+                className="rounded border border-fsm-border px-3 py-2 text-sm w-full resize-y min-h-[64px]"
+                placeholder="Add a work order note..."
+                value={newNote}
+                onChange={(e) => setNewNote(e.target.value)}
+                maxLength={2000}
+              />
+              <button
+                type="submit"
+                disabled={noteSaving || !newNote.trim()}
+                className="rounded bg-fsm-accent text-white px-3 py-2 text-sm hover:bg-fsm-accentDark disabled:opacity-50"
+              >
+                {noteSaving ? "Saving..." : "Add"}
+              </button>
+            </form>
+            <div className="rounded border border-fsm-border bg-white max-h-56 overflow-auto">
+              {notes.length === 0 ? (
+                <p className="px-3 py-2 text-sm text-slate-600">No notes yet.</p>
+              ) : (
+                notes.map((note) => (
+                  <div key={note.id} className="px-3 py-2 border-b last:border-b-0">
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-sm whitespace-pre-wrap break-words flex-1">{note.note}</p>
+                      <p className="text-xs text-slate-600 text-right shrink-0">
+                        {(note.created_by_name || "Unknown User")}<br />
+                        {new Date(note.created_at).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+
+          <section className="rounded-2xl bg-fsm-panel shadow p-6">
             <div className="flex justify-end">
               <button type="button" onClick={generatePdfReport} className="rounded bg-fsm-accent text-white px-4 py-2 text-sm hover:bg-fsm-accentDark">
                 Generate Work Order PDF
@@ -484,6 +760,7 @@ export const WorkOrderDetailPage = () => {
                     {activeOverlay === "vendor" && "Add Vendor Invoice"}
                     {activeOverlay === "attachment" && "Add Attachments"}
                     {activeOverlay === "status" && "Update Status"}
+                    {activeOverlay === "reassign" && "Reassign Cost"}
                   </h3>
                   <button className="rounded border px-3 py-1.5 text-sm" onClick={() => setActiveOverlay(null)}>Close</button>
                 </div>
@@ -569,6 +846,59 @@ export const WorkOrderDetailPage = () => {
                     >
                       {statusSaving ? "Saving..." : "Save Status"}
                     </button>
+                  </form>
+                )}
+
+                {activeOverlay === "reassign" && (
+                  <form className="space-y-3" onSubmit={reassignCost}>
+                    <select
+                      className="rounded border px-3 py-2 w-full"
+                      value={reassignForm.costKey}
+                      onChange={(e) => setReassignForm((prev) => ({ ...prev, costKey: e.target.value }))}
+                      disabled={saving}
+                      required
+                    >
+                      <option value="">Select cost entry</option>
+                      {reassignCostOptions.map((option) => (
+                        <option key={option.key} value={option.key}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      className="rounded border px-3 py-2 w-full"
+                      value={reassignForm.toWorkOrderId}
+                      onChange={(e) => setReassignForm((prev) => ({ ...prev, toWorkOrderId: e.target.value }))}
+                      disabled={saving}
+                      required
+                    >
+                      <option value="">Select target work order</option>
+                      {workOrderOptions
+                        .filter((option) => option.id !== id)
+                        .map((option) => (
+                          <option key={option.id} value={option.id}>
+                            {`WO-${option.wo_number} | ${option.title}`}
+                          </option>
+                        ))}
+                    </select>
+                    <textarea
+                      className="rounded border px-3 py-2 w-full min-h-[84px]"
+                      placeholder="Reason (optional)"
+                      value={reassignForm.reason}
+                      onChange={(e) => setReassignForm((prev) => ({ ...prev, reason: e.target.value }))}
+                      maxLength={500}
+                      disabled={saving}
+                    />
+                    <button
+                      type="submit"
+                      disabled={saving || reassignCostOptions.length === 0}
+                      className="rounded bg-fsm-accent text-white px-4 py-2 text-sm hover:bg-fsm-accentDark disabled:opacity-50"
+                    >
+                      {saving ? "Saving..." : "Save Change"}
+                    </button>
+                    {reassignCostOptions.length === 0 && (
+                      <p className="text-sm text-slate-600">No material or vendor cost entries available to reassign.</p>
+                    )}
                   </form>
                 )}
             </aside>

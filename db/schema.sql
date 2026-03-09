@@ -160,6 +160,14 @@ CREATE TABLE IF NOT EXISTS attachments (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS work_order_notes (
+  id VARCHAR(25) PRIMARY KEY,
+  work_order_id VARCHAR(25) NOT NULL REFERENCES work_orders(id) ON DELETE CASCADE,
+  note TEXT NOT NULL,
+  created_by VARCHAR(25) NOT NULL REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE INDEX IF NOT EXISTS idx_work_orders_status ON work_orders(status);
 CREATE INDEX IF NOT EXISTS idx_work_orders_created_at ON work_orders(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_user_page_access_user_id ON user_page_access(user_id);
@@ -173,6 +181,7 @@ CREATE INDEX IF NOT EXISTS idx_materials_work_order_id ON materials(work_order_i
 CREATE INDEX IF NOT EXISTS idx_vendor_invoices_work_order_id ON vendor_invoices(work_order_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_attachments_entity ON attachments(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_work_order_notes_work_order_id ON work_order_notes(work_order_id, created_at DESC);
 
 ALTER TABLE service_requests
   ADD COLUMN IF NOT EXISTS building TEXT NOT NULL DEFAULT 'HQ',

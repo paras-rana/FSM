@@ -7,7 +7,6 @@ import {
   AdminIcon,
   AttachmentIcon,
   BellIcon,
-  CostIcon,
   DashboardIcon,
   FacilityIcon,
   PublicIcon,
@@ -146,14 +145,6 @@ export const AppShell = ({ title, children }: AppShellProps) => {
                   activePath={location.pathname}
                   icon={<TimeSheetIcon size={16} />}
                   label="TimeSheet"
-                />
-              )}
-              {hasPageAccess(user, "costs") && (
-                <NavItem
-                  to="/costs"
-                  activePath={location.pathname}
-                  icon={<CostIcon size={16} />}
-                  label="Costs"
                 />
               )}
               {hasPageAccess(user, "reports") && (

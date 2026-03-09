@@ -34,6 +34,10 @@ const statusSchema = z.object({
   ])
 });
 
+const noteCreateSchema = z.object({
+  note: z.string().trim().min(1).max(2000)
+});
+
 export const workOrdersRouter = Router();
 
 workOrdersRouter.get("/", async (req, res, next) => {
@@ -108,6 +112,78 @@ workOrdersRouter.get("/:id", async (req, res, next) => {
     }
     res.json(rows[0]);
   } catch (error) {
+    next(error);
+  }
+});
+
+workOrdersRouter.get("/:id/notes", async (req, res, next) => {
+  try {
+    const wo = await pool.query(`SELECT id FROM work_orders WHERE id = $1`, [req.params.id]);
+    if (wo.rowCount === 0) {
+      res.status(404).json({ message: "Work order not found" });
+      return;
+    }
+
+    const { rows } = await pool.query(
+      `SELECT n.id, n.work_order_id, n.note, n.created_by, u.full_name AS created_by_name, n.created_at
+       FROM work_order_notes n
+       JOIN users u ON u.id = n.created_by
+       WHERE n.work_order_id = $1
+       ORDER BY n.created_at DESC`,
+      [req.params.id]
+    );
+    res.json(rows);
+  } catch (error: unknown) {
+    if ((error as { code?: string })?.code === "42P01") {
+      res.json([]);
+      return;
+    }
+    next(error);
+  }
+});
+
+workOrdersRouter.post("/:id/notes", authorize("TECHNICIAN", "MANAGER", "ADMIN", "ACCOUNTANT"), async (req, res, next) => {
+  try {
+    const parsed = noteCreateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ message: "Invalid payload" });
+      return;
+    }
+
+    const wo = await pool.query(`SELECT id FROM work_orders WHERE id = $1`, [req.params.id]);
+    if (wo.rowCount === 0) {
+      res.status(404).json({ message: "Work order not found" });
+      return;
+    }
+
+    const id = createCuidLikeId();
+    const created = await pool.query(
+      `INSERT INTO work_order_notes (id, work_order_id, note, created_by)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, work_order_id, note, created_by, created_at`,
+      [id, req.params.id, parsed.data.note, req.user!.id]
+    );
+    const withName = await pool.query(
+      `SELECT n.id, n.work_order_id, n.note, n.created_by, u.full_name AS created_by_name, n.created_at
+       FROM work_order_notes n
+       JOIN users u ON u.id = n.created_by
+       WHERE n.id = $1`,
+      [id]
+    );
+
+    await addAuditLog({
+      entityType: "WORK_ORDER",
+      entityId: req.params.id,
+      action: "NOTE_ADD",
+      performedBy: req.user!.id
+    });
+
+    res.status(201).json(withName.rows[0] ?? created.rows[0]);
+  } catch (error: unknown) {
+    if ((error as { code?: string })?.code === "42P01") {
+      res.status(503).json({ message: "Notes feature is not initialized in the database yet." });
+      return;
+    }
     next(error);
   }
 });

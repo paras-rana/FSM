@@ -57,6 +57,21 @@ export const runBootstrapMigrations = async (): Promise<void> => {
     ON role_page_access(role_id)
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS work_order_notes (
+      id VARCHAR(25) PRIMARY KEY,
+      work_order_id VARCHAR(25) NOT NULL REFERENCES work_orders(id) ON DELETE CASCADE,
+      note TEXT NOT NULL,
+      created_by VARCHAR(25) NOT NULL REFERENCES users(id),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_work_order_notes_work_order_id
+    ON work_order_notes(work_order_id, created_at DESC)
+  `);
+
   const { rows } = await pool.query(`SELECT COUNT(*)::int AS count FROM role_page_access`);
   const currentCount = rows[0]?.count ?? 0;
   if (currentCount === 0) {

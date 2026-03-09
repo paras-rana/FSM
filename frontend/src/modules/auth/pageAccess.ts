@@ -26,7 +26,7 @@ const PAGE_TO_PATH: Record<PageAccessKey, string> = {
   "work-orders": "/work-orders",
   "service-requests": "/service-requests",
   timesheet: "/timesheet",
-  costs: "/costs",
+  costs: "/work-orders",
   reports: "/reports",
   "theme-templates": "/theme-templates",
   facilities: "/facilities",

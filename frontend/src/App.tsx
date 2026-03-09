@@ -2,7 +2,6 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { ProtectedRoute } from "./modules/auth/ProtectedRoute";
 import { DashboardPage } from "./pages/DashboardPage";
 import { AdminUsersPage } from "./pages/AdminUsersPage";
-import { CostsPage } from "./pages/CostsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { AttachmentsPage } from "./pages/AttachmentsPage";
@@ -83,11 +82,7 @@ export const App = () => {
       />
       <Route
         path="/costs"
-        element={
-          <ProtectedRoute requiredPage="costs">
-            <CostsPage />
-          </ProtectedRoute>
-        }
+        element={<Navigate to="/work-orders" replace />}
       />
       <Route
         path="/attachments"
