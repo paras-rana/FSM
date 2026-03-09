@@ -13,6 +13,34 @@ Field Service Management (FSM) full-stack baseline:
 
 ## Recent Capabilities
 
+- Inventory management:
+  - New Inventory page with filters by Part Name/Number and Warehouse/Van
+  - Inventory list pagination at 25 records per page
+  - Add Purchased Item overlay supports:
+    - Creating a new part (part number + name + quantity)
+    - Adding quantity to an existing part number
+  - Transfer Items overlay supports inventory transfer:
+    - Warehouse to Warehouse
+    - Warehouse to Van
+    - Van to Van
+  - Inventory activity tracking now records and displays who performed:
+    - Purchase/add
+    - Transfer
+    - Consume
+- Work order inventory consumption:
+  - Work Order Detail includes a "Consume Parts" overlay
+  - Users can select location, select part, and consume quantity against a work order
+  - Consumed parts are listed under each work order with who consumed and when
+- Work order lifecycle updates:
+  - Added status: `CHECKED_AND_CLOSED` ("Checked and Closed")
+  - Updated flow:
+    - Service request -> manager creates work order
+    - Manager assigns technician
+    - Technician moves status through In Progress / Waiting for Parts / Completed
+    - Manager reviews and sets Checked and Closed
+    - Manager can reopen and reassign as needed
+    - Archive allowed only after 90 days from Checked and Closed
+  - `ASSIGNED` can be used again to reassign technician on already-assigned work orders
 - Facilities management:
   - Admin Facilities page with searchable table (name, city, zipcode filters)
   - Right-side overlay workflows for Add Facility, View Details, and Edit Details
@@ -30,10 +58,9 @@ Field Service Management (FSM) full-stack baseline:
   - Login screen redesigned with right-side sign-in panel and left hero image/quote
   - User menu moved to header (logout available from username dropdown/banner)
 - Visual styling baseline update:
-  - Clean white application surfaces with consistent band highlights
-  - Left-edge band styling in sidebar navigation
-  - Active nav item uses full-edge highlight treatment
-  - App-wide button styling standardized to a light-blue style
+  - Modernized high-contrast styling with stronger color highlights and gradients
+  - Static icon-first sidebar navigation with hover labels
+  - Updated login card and shell surfaces for improved contrast and emphasis
 - Dashboard KPI updates:
   - Replaced "Closed This Week" KPI with:
     - Total Cost this month and last month (material + vendor)
@@ -73,6 +100,7 @@ Field Service Management (FSM) full-stack baseline:
    - Run `db/schema.sql`
    - Run `db/seed.sql`
    - Optional demo data: run `db/seed_demo.sql`
+    - Demo seed now includes inventory parts, balances, transfers, and consumed-part examples
    - Note: backend bootstrap migrations also add missing runtime columns/tables on startup
 4. Start backend:
    - `cd backend`
