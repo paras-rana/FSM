@@ -70,8 +70,8 @@ workOrdersRouter.get("/", async (req, res, next) => {
        WHERE ($3::text[] IS NULL OR wo.status = ANY($3::text[]))
          AND ($4::text[] IS NULL OR NOT (wo.status = ANY($4::text[])))
          AND ($5::text IS NULL OR wo.lead_technician_id = $5)
-         AND ($6::timestamptz IS NULL OR COALESCE(wo.updated_at, wo.created_at) >= $6::timestamptz)
-         AND ($7::timestamptz IS NULL OR COALESCE(wo.updated_at, wo.created_at) < $7::timestamptz)
+         AND ($6::timestamptz IS NULL OR wo.updated_at >= $6::timestamptz)
+         AND ($7::timestamptz IS NULL OR wo.updated_at < $7::timestamptz)
          AND ($8::boolean IS NULL OR $8 = false OR wo.lead_technician_id IS NOT NULL)
          AND ($9::text IS NULL OR wo.facility_name = $9)
        ORDER BY wo.created_at DESC

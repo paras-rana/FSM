@@ -37,12 +37,16 @@ const formatCurrency = (amount: number): string =>
   );
 
 type CostKpiResponse = {
-  totals: {
-    combined: { total: number };
-  };
+  items: Array<{
+    month: string;
+    total: number;
+  }>;
 };
 type LaborKpiResponse = {
-  totals: { totalHours: number };
+  items: Array<{
+    month: string;
+    totalHours: number;
+  }>;
 };
 type MonthlyKpis = {
   thisMonthCost: number | null;
@@ -71,33 +75,33 @@ export const DashboardPage = () => {
   useEffect(() => {
     const load = async () => {
       try {
-        const [dashboardResult, thisCostResult, lastCostResult, thisLaborResult, lastLaborResult] =
+        const [dashboardResult, costResult, laborResult] =
           await Promise.allSettled([
             api.get<DashboardSummary>("/reports/dashboard"),
-            api.get<CostKpiResponse>(`/reports/cost-details?month=${thisMonthKey}`),
-            api.get<CostKpiResponse>(`/reports/cost-details?month=${lastMonthKey}`),
-            api.get<LaborKpiResponse>(`/reports/labor-details?month=${thisMonthKey}`),
-            api.get<LaborKpiResponse>(`/reports/labor-details?month=${lastMonthKey}`)
+            api.get<CostKpiResponse>(`/reports/kpis/cost-totals?months=${thisMonthKey},${lastMonthKey}`),
+            api.get<LaborKpiResponse>(`/reports/kpis/labor-totals?months=${thisMonthKey},${lastMonthKey}`)
           ]);
+
+        const costByMonth = new Map<string, number>();
+        if (costResult.status === "fulfilled") {
+          for (const row of costResult.value.data.items ?? []) {
+            costByMonth.set(row.month, Number(row.total || 0));
+          }
+        }
+
+        const laborByMonth = new Map<string, number>();
+        if (laborResult.status === "fulfilled") {
+          for (const row of laborResult.value.data.items ?? []) {
+            laborByMonth.set(row.month, Number(row.totalHours || 0));
+          }
+        }
 
         setSummary(dashboardResult.status === "fulfilled" ? dashboardResult.value.data : null);
         setMonthlyKpis({
-          thisMonthCost:
-            thisCostResult.status === "fulfilled"
-              ? Number(thisCostResult.value.data?.totals?.combined?.total ?? 0)
-              : null,
-          lastMonthCost:
-            lastCostResult.status === "fulfilled"
-              ? Number(lastCostResult.value.data?.totals?.combined?.total ?? 0)
-              : null,
-          thisMonthLabor:
-            thisLaborResult.status === "fulfilled"
-              ? Number(thisLaborResult.value.data?.totals?.totalHours ?? 0)
-              : null,
-          lastMonthLabor:
-            lastLaborResult.status === "fulfilled"
-              ? Number(lastLaborResult.value.data?.totals?.totalHours ?? 0)
-              : null
+          thisMonthCost: costByMonth.has(thisMonthKey) ? costByMonth.get(thisMonthKey)! : null,
+          lastMonthCost: costByMonth.has(lastMonthKey) ? costByMonth.get(lastMonthKey)! : null,
+          thisMonthLabor: laborByMonth.has(thisMonthKey) ? laborByMonth.get(thisMonthKey)! : null,
+          lastMonthLabor: laborByMonth.has(lastMonthKey) ? laborByMonth.get(lastMonthKey)! : null
         });
       } catch {
         setSummary(null);

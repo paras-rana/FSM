@@ -110,8 +110,8 @@ uploadsRouter.get("/", async (req, res, next) => {
        WHERE ($3::text IS NULL OR a.entity_type = $3)
          AND ($4::text IS NULL OR a.entity_id = $4)
          AND ($5::int IS NULL OR wo.wo_number = $5)
-         AND ($6::date IS NULL OR a.created_at::date >= $6::date)
-         AND ($7::date IS NULL OR a.created_at::date <= $7::date)
+         AND ($6::date IS NULL OR a.created_at >= $6::date)
+         AND ($7::date IS NULL OR a.created_at < ($7::date + INTERVAL '1 day'))
        ORDER BY a.created_at DESC
        LIMIT $1 OFFSET $2`,
       [limit, offset, entityType, entityId, workOrderNumber, from, to]

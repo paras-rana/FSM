@@ -13,6 +13,7 @@ const monthSchema = z.string().regex(/^\d{4}-\d{2}$/);
 export const reportsRouter = Router();
 
 const formatDate = (value: Date) => value.toISOString().slice(0, 10);
+const monthKeySchema = z.string().regex(/^\d{4}-\d{2}$/);
 
 const resolveDateRange = (query: {
   from?: string;
@@ -37,6 +38,28 @@ const resolveDateRange = (query: {
   if (!fromValid.success || !toValid.success) return null;
   if (fromValid.data > toValid.data) return null;
   return { from: fromValid.data, to: toValid.data };
+};
+
+const parseMonthKeyRange = (monthKey: string): { start: string; endExclusive: string } | null => {
+  const parsed = monthKeySchema.safeParse(monthKey);
+  if (!parsed.success) return null;
+  const [yearRaw, monthRaw] = monthKey.split("-");
+  const year = Number(yearRaw);
+  const month = Number(monthRaw);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) return null;
+
+  const start = new Date(Date.UTC(year, month - 1, 1));
+  const endExclusive = new Date(Date.UTC(year, month, 1));
+  return { start: formatDate(start), endExclusive: formatDate(endExclusive) };
+};
+
+const parseRequestedMonths = (rawMonths: string | undefined): string[] => {
+  const tokens = (rawMonths ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const unique = Array.from(new Set(tokens));
+  return unique.filter((monthKey) => monthKeySchema.safeParse(monthKey).success);
 };
 
 reportsRouter.get("/dashboard", async (_req, res, next) => {
@@ -119,6 +142,89 @@ reportsRouter.get("/dashboard", async (_req, res, next) => {
       openAssignedByTechnician: openByTechRows.rows,
       longestOpenWorkOrders: longestOpenRows.rows
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+reportsRouter.get("/kpis/cost-totals", async (req, res, next) => {
+  try {
+    const months = parseRequestedMonths(req.query.months as string | undefined);
+    if (months.length === 0) {
+      res.status(400).json({ message: "Invalid query params. Provide months=YYYY-MM[,YYYY-MM...]." });
+      return;
+    }
+
+    const items = await Promise.all(
+      months.map(async (month) => {
+        const range = parseMonthKeyRange(month);
+        if (!range) {
+          return { month, total: 0 };
+        }
+
+        const { rows } = await pool.query(
+          `SELECT COALESCE(SUM(total), 0)::numeric AS total
+           FROM (
+             SELECT m.total
+             FROM materials m
+             WHERE m.created_at >= $1::date
+               AND m.created_at < $2::date
+             UNION ALL
+             SELECT v.total
+             FROM vendor_invoices v
+             WHERE v.created_at >= $1::date
+               AND v.created_at < $2::date
+           ) costs`,
+          [range.start, range.endExclusive]
+        );
+
+        return {
+          month,
+          total: Number(rows[0]?.total ?? 0)
+        };
+      })
+    );
+
+    res.json({ items });
+  } catch (error) {
+    next(error);
+  }
+});
+
+reportsRouter.get("/kpis/labor-totals", async (req, res, next) => {
+  try {
+    const months = parseRequestedMonths(req.query.months as string | undefined);
+    if (months.length === 0) {
+      res.status(400).json({ message: "Invalid query params. Provide months=YYYY-MM[,YYYY-MM...]." });
+      return;
+    }
+
+    const items = await Promise.all(
+      months.map(async (month) => {
+        const range = parseMonthKeyRange(month);
+        if (!range) {
+          return { month, totalHours: 0 };
+        }
+        const endInclusive = new Date(`${range.endExclusive}T00:00:00.000Z`);
+        endInclusive.setUTCDate(endInclusive.getUTCDate() - 1);
+        const endInclusiveDate = formatDate(endInclusive);
+
+        const { rows } = await pool.query(
+          `SELECT COALESCE(SUM(le.hours), 0)::numeric AS total_hours
+           FROM labor_entries le
+           WHERE le.entry_date >= $1::date
+             AND le.entry_date <= $2::date`,
+          [range.start, endInclusiveDate]
+        );
+
+        return {
+          month,
+          totalHours: Number(rows[0]?.total_hours ?? 0)
+        };
+      })
+    );
+
+    res.json({ items });
   } catch (error) {
     next(error);
   }
@@ -254,7 +360,8 @@ reportsRouter.get("/cost-details", async (req, res, next) => {
          FROM materials m
          LEFT JOIN work_orders wo ON wo.id = m.work_order_id
          LEFT JOIN users u ON u.id = m.created_by
-         WHERE m.created_at::date BETWEEN $1::date AND $2::date
+         WHERE m.created_at >= $1::date
+           AND m.created_at < ($2::date + INTERVAL '1 day')
            AND ($3::text IS NULL OR m.work_order_id = $3)
          ORDER BY m.created_at DESC`,
         [range.from, range.to, workOrderId]
@@ -277,7 +384,8 @@ reportsRouter.get("/cost-details", async (req, res, next) => {
          FROM vendor_invoices v
          LEFT JOIN work_orders wo ON wo.id = v.work_order_id
          LEFT JOIN users u ON u.id = v.created_by
-         WHERE v.created_at::date BETWEEN $1::date AND $2::date
+         WHERE v.created_at >= $1::date
+           AND v.created_at < ($2::date + INTERVAL '1 day')
            AND ($3::text IS NULL OR v.work_order_id = $3)
          ORDER BY v.created_at DESC`,
         [range.from, range.to, workOrderId]

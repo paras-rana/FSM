@@ -44,8 +44,8 @@ costsRouter.get("/materials", async (req, res, next) => {
       `SELECT id, work_order_id, description, quantity, unit_cost, sales_tax_rate, subtotal, tax, total, created_by, created_at
        FROM materials
        WHERE ($1::text IS NULL OR work_order_id = $1)
-         AND ($2::date IS NULL OR created_at::date >= $2::date)
-         AND ($3::date IS NULL OR created_at::date <= $3::date)
+         AND ($2::date IS NULL OR created_at >= $2::date)
+         AND ($3::date IS NULL OR created_at < ($3::date + INTERVAL '1 day'))
        ORDER BY created_at DESC`,
       [workOrderId, from, to]
     );
@@ -111,8 +111,8 @@ costsRouter.get("/vendor-invoices", async (req, res, next) => {
       `SELECT id, work_order_id, vendor_name, invoice_number, amount, sales_tax_rate, subtotal, tax, total, created_by, created_at
        FROM vendor_invoices
        WHERE ($1::text IS NULL OR work_order_id = $1)
-         AND ($2::date IS NULL OR created_at::date >= $2::date)
-         AND ($3::date IS NULL OR created_at::date <= $3::date)
+         AND ($2::date IS NULL OR created_at >= $2::date)
+         AND ($3::date IS NULL OR created_at < ($3::date + INTERVAL '1 day'))
        ORDER BY created_at DESC`,
       [workOrderId, from, to]
     );
@@ -400,16 +400,16 @@ costsRouter.get("/totals", async (req, res, next) => {
       `SELECT COALESCE(sum(subtotal), 0)::numeric AS subtotal, COALESCE(sum(tax), 0)::numeric AS tax, COALESCE(sum(total), 0)::numeric AS total
        FROM materials
        WHERE work_order_id = $1
-         AND ($2::date IS NULL OR created_at::date >= $2::date)
-         AND ($3::date IS NULL OR created_at::date <= $3::date)`,
+         AND ($2::date IS NULL OR created_at >= $2::date)
+         AND ($3::date IS NULL OR created_at < ($3::date + INTERVAL '1 day'))`,
       [workOrderId, from, to]
     );
     const ven = await pool.query(
       `SELECT COALESCE(sum(subtotal), 0)::numeric AS subtotal, COALESCE(sum(tax), 0)::numeric AS tax, COALESCE(sum(total), 0)::numeric AS total
        FROM vendor_invoices
        WHERE work_order_id = $1
-         AND ($2::date IS NULL OR created_at::date >= $2::date)
-         AND ($3::date IS NULL OR created_at::date <= $3::date)`,
+         AND ($2::date IS NULL OR created_at >= $2::date)
+         AND ($3::date IS NULL OR created_at < ($3::date + INTERVAL '1 day'))`,
       [workOrderId, from, to]
     );
 
