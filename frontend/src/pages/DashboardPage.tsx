@@ -124,6 +124,7 @@ export const DashboardPage = () => {
       .filter((row) => !["CHECKED_AND_CLOSED", "ARCHIVED"].includes(row.status))
       .reduce((sum, row) => sum + Number(row.count || 0), 0) ?? 0;
   const totalNewServiceRequests = summary?.newServiceRequests.count ?? 0;
+  const avgTimeToCloseDays = summary?.avgTimeToCloseDays ?? 0;
   const activeTechnicians =
     summary?.openAssignedByTechnician.filter((row) => Number(row.open_count || 0) > 0).length ?? 0;
   const statusRowsTop = [...(summary?.workOrdersByStatus ?? [])]
@@ -147,10 +148,10 @@ export const DashboardPage = () => {
           <button
             type="button"
             className="rounded-xl border p-4 bg-white/60 text-left hover:bg-white/80 border-t-4 border-t-sky-500"
-            onClick={() => navigate("/service-requests?status=SUBMITTED")}
+            onClick={() => navigate("/work-orders?status=CHECKED_AND_CLOSED,ARCHIVED")}
           >
-            <p className="text-sm text-slate-600">Total New Service Requests</p>
-            <p className="text-2xl font-bold mt-1">{loading ? "-" : totalNewServiceRequests}</p>
+            <p className="text-sm text-slate-600">Average Time to Close (Days)</p>
+            <p className="text-2xl font-bold mt-1">{loading ? "-" : avgTimeToCloseDays.toFixed(1)}</p>
           </button>
           <button
             type="button"

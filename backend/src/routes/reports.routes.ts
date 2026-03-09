@@ -64,7 +64,7 @@ const parseRequestedMonths = (rawMonths: string | undefined): string[] => {
 
 reportsRouter.get("/dashboard", async (_req, res, next) => {
   try {
-    const [statusRows, newSrCountRows, newSrRows, closedByWeekRows, openByTechRows, longestOpenRows] =
+    const [statusRows, newSrCountRows, newSrRows, closedByWeekRows, openByTechRows, longestOpenRows, avgCloseRows] =
       await Promise.all([
       pool.query(
         `SELECT status, COUNT(*)::int AS count
@@ -129,6 +129,17 @@ reportsRouter.get("/dashboard", async (_req, res, next) => {
          WHERE wo.status NOT IN ('CHECKED_AND_CLOSED', 'ARCHIVED')
          ORDER BY wo.created_at ASC
          LIMIT 5`
+      ),
+      pool.query(
+        `SELECT
+           ROUND(
+             AVG(
+               EXTRACT(EPOCH FROM (COALESCE(wo.updated_at, wo.created_at) - wo.created_at)) / 86400.0
+             )::numeric,
+             1
+           ) AS avg_days
+         FROM work_orders wo
+         WHERE wo.status IN ('CHECKED_AND_CLOSED', 'ARCHIVED')`
       )
     ]);
 
@@ -140,7 +151,8 @@ reportsRouter.get("/dashboard", async (_req, res, next) => {
       },
       closedByWeek: closedByWeekRows.rows,
       openAssignedByTechnician: openByTechRows.rows,
-      longestOpenWorkOrders: longestOpenRows.rows
+      longestOpenWorkOrders: longestOpenRows.rows,
+      avgTimeToCloseDays: Number(avgCloseRows.rows[0]?.avg_days ?? 0)
     });
   } catch (error) {
     next(error);

@@ -251,4 +251,5 @@ export type DashboardSummary = {
   closedByWeek: DashboardClosedByWeek[];
   openAssignedByTechnician: DashboardOpenByTechnician[];
   longestOpenWorkOrders: DashboardLongestOpenWorkOrder[];
+  avgTimeToCloseDays: number;
 };
